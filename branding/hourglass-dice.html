@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OurGlass — the hourglass die</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --ink: #fafafa;
+    --dim: #9a9aa0;
+    --faint: #6b6b72;
+    --accent: #58e6b8;
+    --line: #2e2e33;
+    --panel: #161618;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.011em;
+    overflow: hidden;
+  }
+
+  canvas { display: block; touch-action: none; }
+
+  .hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    padding: 32px 36px;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .wordmark {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .wordmark span { color: var(--accent); }
+
+  .lede {
+    margin-top: 10px;
+    max-width: 30ch;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--dim);
+  }
+
+  .foot {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .readout {
+    font-family: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    line-height: 1.9;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .readout b {
+    display: inline-block;
+    min-width: 8ch;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .readout .run { color: var(--accent); }
+
+  .controls { display: flex; gap: 10px; pointer-events: auto; }
+
+  button {
+    font: inherit;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: border-color .18s ease, color .18s ease;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+  kbd {
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+    color: var(--faint);
+    border: 1px solid var(--line);
+    padding: 1px 5px;
+  }
+
+  .hint {
+    font-size: 11px;
+    color: var(--faint);
+    margin-top: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="hud">
+  <header>
+    <div class="wordmark">Our<span>Glass</span></div>
+    <p class="lede">A die whose six faces are glass. Three hourglasses, one per axis — whichever
+      face lands down, the vertical one runs.</p>
+  </header>
+  <div></div>
+  <div class="foot">
+    <div class="readout">
+      <div>axis&nbsp;&nbsp;&nbsp;&nbsp;<b id="r-axis">—</b></div>
+      <div>flow&nbsp;&nbsp;&nbsp;&nbsp;<b id="r-flow">—</b></div>
+      <div>left&nbsp;&nbsp;&nbsp;&nbsp;<b id="r-left">—</b></div>
+      <div class="hint">drag to orbit · <kbd>space</kbd> to roll</div>
+    </div>
+    <div class="controls">
+      <button id="btn-roll" type="button">Roll</button>
+      <button id="btn-auto" type="button" aria-pressed="true">Auto-roll</button>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ------------------------------------------------------------------ *
+ * Geometry constants.
+ *
+ * The three hourglasses share the cube's centre, so their envelopes must
+ * not intersect. Each bulb profile is kept strictly under the 45° cone
+ * r(t) < t (t = distance from centre, normalised by the half-length).
+ * Two solids bounded by such cones on perpendicular axes meet only at the
+ * origin — the small overlap left around the necks is covered by the
+ * central node.
+ * ------------------------------------------------------------------ */
+const S        = 1.0;    // cube half-size
+const L        = 0.93;   // hourglass half-length
+const NECK     = 0.038;  // neck radius, in units of L
+const MAX_R    = 0.310;  // widest bulb radius, in units of L
+const T_MAX    = 0.74;   // where the bulb is widest; beyond it, an ellipsoid dome
+const FLARE    = 4.0;    // how long the stem stays thin before the bulb opens
+const WALL     = 0.93;   // sand surface inset from the glass wall
+const CAPACITY = 0.9;    // sand charge, as a fraction of one bulb's volume
+const DRAIN    = 15;     // seconds for a full bulb to empty
+
+const DOWN = new THREE.Vector3(0, -1, 0);
+const AXES = [
+  new THREE.Vector3(1, 0, 0),
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, 0, 1),
+];
+const AXIS_NAMES = ['X', 'Y', 'Z'];
+const scratch = new THREE.Vector3();
+
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+/** Silhouette of one bulb: t = 0 at the neck, t = 1 at the domed far end. */
+function profileR(t) {
+  if (t >= T_MAX) {
+    const u = (t - T_MAX) / (1 - T_MAX);
+    return MAX_R * Math.sqrt(Math.max(0, 1 - u * u));
+  }
+  // sin() so the wall meets the dome tangentially, no crease at the widest point
+  return NECK + (MAX_R - NECK) * Math.sin((Math.PI / 2) * Math.pow(t / T_MAX, FLARE));
+}
+const innerR = (t) => profileR(t) * WALL;
+
+/* Cumulative volume of a bulb from the neck outwards, so the sand level
+   drops the way it does in a real hourglass (fast through the narrow part). */
+const VOL_N = 256;
+const volume = new Float32Array(VOL_N + 1);
+{
+  let acc = 0;
+  for (let i = 1; i <= VOL_N; i++) {
+    const t0 = (i - 1) / VOL_N, t1 = i / VOL_N;
+    const r0 = innerR(t0), r1 = innerR(t1);
+    acc += ((r0 * r0 + r1 * r1) / 2) / VOL_N;
+    volume[i] = acc;
+  }
+  for (let i = 0; i <= VOL_N; i++) volume[i] /= acc;
+}
+/** Inverse of the volume table: fraction of a bulb filled → level t. */
+function levelAt(v) {
+  const target = clamp(v, 0, 1);
+  let lo = 0, hi = VOL_N;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (volume[mid] < target) lo = mid; else hi = mid;
+  }
+  const span = volume[hi] - volume[lo];
+  const f = span > 1e-9 ? (target - volume[lo]) / span : 0;
+  return (lo + f) / VOL_N;
+}
+
+/* ------------------------------------------------------------------ *
+ * Renderer, scene, camera
+ * ------------------------------------------------------------------ */
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0b);
+scene.fog = new THREE.Fog(0x0a0a0b, 8, 18);
+
+const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(4.2, 2.6, 5.4);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.enablePan = false;
+controls.minDistance = 4.5;
+controls.maxDistance = 13;
+controls.autoRotate = !reduceMotion;
+controls.autoRotateSpeed = 0.45;
+
+/* A small procedural environment — reflections carry the brand colours
+   instead of the default studio white. */
+function buildEnvironment() {
+  const env = new THREE.Scene();
+  const box = new THREE.BoxGeometry(1, 1, 1);
+  const lit = (hex, gain) => new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(gain) });
+  const put = (mat, sx, sy, sz, x, y, z) => {
+    const m = new THREE.Mesh(box, mat);
+    m.scale.set(sx, sy, sz);
+    m.position.set(x, y, z);
+    env.add(m);
+  };
+  const room = new THREE.Mesh(box, new THREE.MeshBasicMaterial({ color: 0x08080a, side: THREE.BackSide }));
+  room.scale.setScalar(22);
+  env.add(room);
+
+  put(lit(0xffffff, 1.5), 9, 0.1, 9, 0, 7, 0);       // key, overhead
+  put(lit(0x58e6b8, 1.1), 0.1, 6, 7, -6, 0.5, 0);    // mint, left
+  put(lit(0x3aa3ff, 0.9), 0.1, 6, 7, 6, 0.5, 0);     // stream blue, right
+  put(lit(0xffffff, 0.45), 7, 5, 0.1, 0, 1, -6.5);    // rim, behind
+  put(lit(0x16262b, 1.0), 9, 0.1, 9, 0, -7, 0);      // floor bounce
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const rt = pmrem.fromScene(env, 0.03);
+  pmrem.dispose();
+  return rt.texture;
+}
+const envMap = buildEnvironment();
+scene.environment = envMap;
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.08));
+const key = new THREE.DirectionalLight(0xffffff, 0.85);
+key.position.set(3, 6, 4);
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x58e6b8, 0.45);
+rim.position.set(-4, -1, -3);
+scene.add(rim);
+
+/* ------------------------------------------------------------------ *
+ * The die
+ * ------------------------------------------------------------------ */
+const die = new THREE.Group();
+scene.add(die);
+
+/* The shell is drawn as two passes — far faces first, near faces last — so the
+   contents sort correctly between them. `transmission` is deliberately not used:
+   three leaves transparent objects out of the transmission buffer, which would
+   erase the hourglasses inside. */
+const shellGeometry = new RoundedBoxGeometry(2 * S, 2 * S, 2 * S, 6, 0.09);
+/* Additive: the panes contribute their reflections and nothing else, so the
+   walls read as glass instead of fogging the contents grey. */
+function shellMaterial(side, opacity) {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0x0c1a1c,
+    metalness: 0,
+    roughness: 0.04,
+    iridescence: 0.7,
+    iridescenceIOR: 1.34,
+    clearcoat: 1,
+    clearcoatRoughness: 0.02,
+    transparent: true,
+    opacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side,
+    envMapIntensity: 1.7,
+  });
+}
+const shellFar = new THREE.Mesh(shellGeometry, shellMaterial(THREE.BackSide, 0.35));
+shellFar.renderOrder = 0;
+const shellNear = new THREE.Mesh(shellGeometry, shellMaterial(THREE.FrontSide, 0.6));
+shellNear.renderOrder = 40;
+die.add(shellFar, shellNear);
+
+const edges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.944, 1.944, 1.944)),
+  new THREE.LineBasicMaterial({ color: 0x58e6b8, transparent: true, opacity: 0.34, depthWrite: false })
+);
+edges.renderOrder = 41;
+die.add(edges);
+
+/* Where the three necks cross. Also hides the only place the envelopes touch. */
+const node = new THREE.Mesh(
+  new THREE.IcosahedronGeometry(0.062, 2),
+  new THREE.MeshPhysicalMaterial({ color: 0x101014, metalness: 0.9, roughness: 0.22, emissive: 0x0d3a2e })
+);
+die.add(node);
+
+/* ------------------------------------------------------------------ *
+ * Sand surface — a fixed-topology lathe grid whose vertices are rewritten
+ * each frame. No per-frame allocation.
+ * ------------------------------------------------------------------ */
+const RAD = 44, WALL_ROWS = 30, CAP_ROWS = 8;
+
+class SandSurface {
+  constructor(material) {
+    this.rows = WALL_ROWS + CAP_ROWS;
+    this.cols = RAD + 1;
+    const n = this.rows * this.cols;
+    this.position = new Float32Array(n * 3);
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(this.position, 3));
+    this.geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+
+    const index = [];
+    for (let r = 0; r < this.rows - 1; r++) {
+      for (let c = 0; c < RAD; c++) {
+        const a = r * this.cols + c, b = a + 1, d = a + this.cols, e = d + 1;
+        index.push(a, d, b, b, d, e);
+      }
+    }
+    this.geometry.setIndex(index);
+    this.mesh = new THREE.Mesh(this.geometry, material);
+    this.mesh.frustumCulled = false;
+  }
+
+  /**
+   * @param {number} sign  +1 for the bulb on +Y, -1 for the one on -Y
+   * @param {number} tFrom level where the sand body starts (0 = neck, 1 = far end)
+   * @param {number} tTo   level of the free surface
+   * @param {number} cap   how far the free surface pulls toward the neck
+   * @param {number} capPow 1 = straight cone (a heap), >1 = funnel (a crater)
+   */
+  update(sign, tFrom, tTo, cap, capPow) {
+    const p = this.position;
+    const rimR = innerR(tTo);
+    let k = 0;
+    for (let r = 0; r < this.rows; r++) {
+      let radius, t;
+      if (r < WALL_ROWS) {
+        const u = r / (WALL_ROWS - 1);
+        t = tFrom + (tTo - tFrom) * u;
+        radius = innerR(t);
+      } else {
+        const v = (r - WALL_ROWS + 1) / CAP_ROWS;
+        t = tTo - cap * Math.pow(v, capPow);
+        radius = rimR * (1 - v);
+      }
+      const y = sign * t * L;
+      for (let c = 0; c <= RAD; c++) {
+        const a = (c / RAD) * Math.PI * 2;
+        p[k++] = Math.cos(a) * radius;
+        p[k++] = y;
+        p[k++] = Math.sin(a) * radius;
+      }
+    }
+    this.geometry.attributes.position.needsUpdate = true;
+    this.geometry.computeVertexNormals();
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * One hourglass, authored along its own local Y and then rotated onto
+ * the die axis it belongs to.
+ * ------------------------------------------------------------------ */
+function grainTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.7)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
+}
+const grain = grainTexture();
+
+const GRAINS = 80;
+
+class Hourglass {
+  constructor(axisIndex) {
+    this.axis = axisIndex;
+    this.fillPlus = 1;   // fraction of the sand charge sitting in the +Y bulb
+    this.gravity = 0;    // +1 when local +Y points straight down
+    this.gate = 0;       // how much of the flow rate gravity allows right now
+
+    this.group = new THREE.Group();
+    if (axisIndex === 0) this.group.rotation.z = -Math.PI / 2;
+    if (axisIndex === 2) this.group.rotation.x = Math.PI / 2;
+
+    // glass envelope: one closed lathe from -L to +L
+    const pts = [];
+    const N = 160;
+    for (let i = 0; i <= N; i++) {
+      const t = -1 + (2 * i) / N;
+      pts.push(new THREE.Vector2(Math.max(profileR(Math.abs(t)), 0.0005), t * L));
+    }
+    this.glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x1b3a37,
+      metalness: 0,
+      roughness: 0.05,
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      clearcoat: 1,
+      clearcoatRoughness: 0.03,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      envMapIntensity: 1.6,
+    });
+    const envelope = new THREE.Mesh(new THREE.LatheGeometry(pts, 64), this.glassMat);
+    envelope.renderOrder = 10;
+    this.group.add(envelope);
+
+    // Sand stays opaque: transparent materials are sorted per object, and every
+    // object here shares the same centre, so anything translucent would flicker.
+    this.sandMat = new THREE.MeshStandardMaterial({
+      color: 0x58e6b8,
+      roughness: 0.95,
+      metalness: 0,
+      envMapIntensity: 0.55,
+      emissive: 0x083328,
+      side: THREE.DoubleSide,
+    });
+    this.plus = new SandSurface(this.sandMat);
+    this.minus = new SandSurface(this.sandMat);
+    this.group.add(this.plus.mesh, this.minus.mesh);
+
+    // the falling column
+    this.streamMat = new THREE.MeshBasicMaterial({ color: 0x6fe9c4, transparent: true, opacity: 0, depthWrite: false });
+    this.stream = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.024, 1, 12, 1, true), this.streamMat);
+    this.stream.renderOrder = 20;
+    this.group.add(this.stream);
+
+    // loose grains around the column
+    const gp = new Float32Array(GRAINS * 3);
+    this.grainGeo = new THREE.BufferGeometry();
+    this.grainGeo.setAttribute('position', new THREE.BufferAttribute(gp, 3));
+    this.grainMat = new THREE.PointsMaterial({
+      size: 0.035, map: grain, color: 0xd8fff0,
+      transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    this.grains = new THREE.Points(this.grainGeo, this.grainMat);
+    this.grains.renderOrder = 30;
+    this.grains.frustumCulled = false;
+    this.group.add(this.grains);
+
+    this.phase = new Float32Array(GRAINS);
+    this.jitter = new Float32Array(GRAINS * 2);
+    for (let i = 0; i < GRAINS; i++) {
+      this.phase[i] = Math.random();
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.sqrt(Math.random()) * 0.022;
+      this.jitter[i * 2] = Math.cos(a) * r;
+      this.jitter[i * 2 + 1] = Math.sin(a) * r;
+    }
+  }
+
+  /** Sand still available in the upper bulb, 0..1. */
+  get remaining() {
+    return this.gravity > 0 ? 1 - this.fillPlus : this.fillPlus;
+  }
+
+  step(dt, quaternion) {
+    const pull = -scratch.copy(AXES[this.axis]).applyQuaternion(quaternion).y;  // >0 → local +Y points down
+    this.gravity = Math.sign(pull) || 1;
+    this.gate = smoothstep(0.45, 0.9, Math.abs(pull));
+
+    const flowing = this.gate * (this.remaining > 0 ? 1 : 0);
+    if (flowing > 0) {
+      const d = (dt / DRAIN) * this.gate;
+      this.fillPlus = clamp(this.fillPlus + (this.gravity > 0 ? d : -d), 0, 1);
+    }
+    this.render(dt, flowing);
+  }
+
+  render(dt, flowing) {
+    const lower = this.gravity > 0 ? 1 : -1;   // sign of the bulb currently at the bottom
+    const inLower = this.gravity > 0 ? this.fillPlus : 1 - this.fillPlus;
+    const inUpper = 1 - inLower;
+
+    this.drawBulb(lower > 0 ? this.minus : this.plus, -lower, inUpper, false);
+    const lowerSurface = this.drawBulb(lower > 0 ? this.plus : this.minus, lower, inLower, true);
+
+    // the two idle axes go inert, so the running one reads at a glance
+    const active = this.gate > 0.5;
+    this.sandMat.color.setHex(active ? 0x58e6b8 : 0x3a4c53);
+    this.sandMat.emissive.setHex(active ? 0x083328 : 0x000000);
+    this.glassMat.opacity = active ? 0.55 : 0.3;
+
+    // column from the neck down to the heap
+    const run = flowing > 0.02 && inUpper > 0.001;
+    this.stream.visible = run;
+    this.streamMat.opacity = run ? 0.7 * flowing : 0;
+    if (run) {
+      const span = lowerSurface;
+      this.stream.position.set(0, span / 2, 0);
+      this.stream.scale.set(1, Math.abs(span), 1);
+    }
+
+    this.grainMat.opacity = run ? 0.85 * flowing : 0;
+    if (run) {
+      const p = this.grainGeo.attributes.position.array;
+      const drop = lowerSurface;
+      for (let i = 0; i < GRAINS; i++) {
+        this.phase[i] = (this.phase[i] + dt * (1.7 + (i % 7) * 0.09)) % 1;
+        const f = this.phase[i];
+        const spread = 0.35 + f * 0.9;
+        p[i * 3] = this.jitter[i * 2] * spread;
+        p[i * 3 + 1] = drop * f * f;
+        p[i * 3 + 2] = this.jitter[i * 2 + 1] * spread;
+      }
+      this.grainGeo.attributes.position.needsUpdate = true;
+    }
+  }
+
+  /**
+   * @param {SandSurface} surface
+   * @param {number} sign which bulb (+1 = +Y)
+   * @param {number} share fraction of the whole sand charge held in this bulb
+   * @param {boolean} isLower heap (true) or drained crater (false)
+   * @returns {number} local Y of the free surface at the centre
+   */
+  drawBulb(surface, sign, share, isLower) {
+    const vol = clamp(share * CAPACITY, 0, 1);
+    if (vol < 0.004) { surface.mesh.visible = false; return sign * 0.02 * L; }
+    surface.mesh.visible = true;
+
+    if (isLower) {
+      // sand rests against the far end and piles up toward the neck
+      const t = levelAt(1 - vol);
+      const heap = Math.min(innerR(t) / 0.8, 0.2, Math.max(t - 0.03, 0));
+      surface.update(sign, 1, t, heap, 1);
+      return sign * (t - heap) * L;
+    }
+    // sand sits on the neck; the funnel above the hole only forms as it drains,
+    // so a freshly turned bulb reads as full rather than as a cone
+    const t = levelAt(vol);
+    const dug = smoothstep(1, 0.55, share);
+    const crater = Math.min(innerR(t) * 0.85, Math.max(t - 0.02, 0)) * dug;
+    surface.update(sign, 0, t, crater, 1.9);
+    return sign * (t - crater) * L;
+  }
+}
+
+const glasses = [new Hourglass(0), new Hourglass(1), new Hourglass(2)];
+glasses.forEach((h) => die.add(h.group));
+
+/* ------------------------------------------------------------------ *
+ * Contact shadow
+ * ------------------------------------------------------------------ */
+{
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(0,0,0,0.75)');
+  g.addColorStop(0.45, 'rgba(0,0,0,0.28)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  const shadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(5.5, 5.5),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false })
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = -1.72;
+  scene.add(shadow);
+}
+
+/* ------------------------------------------------------------------ *
+ * Rolling: land on a face whose vertical hourglass still has sand up top.
+ * ------------------------------------------------------------------ */
+const roll = {
+  active: false,
+  t: 0,
+  // reduced motion still re-rolls — the die has to keep running — but it lands
+  // fast and without the tumble
+  duration: reduceMotion ? 0.35 : 1.15,
+  from: new THREE.Quaternion(),
+  to: new THREE.Quaternion(),
+  wobbleAxis: new THREE.Vector3(),
+  wobble: 0,
+  cooldown: 0,
+};
+let autoRoll = true;
+
+function pickTarget() {
+  const current = activeIndex();
+  const options = [];
+  for (let axis = 0; axis < 3; axis++) {
+    for (const sgn of [1, -1]) {
+      // sgn = +1 → local +axis points down, so the upper bulb is the -axis one
+      const upper = sgn > 0 ? 1 - glasses[axis].fillPlus : glasses[axis].fillPlus;
+      if (upper > 0.15) options.push({ axis, sgn, fresh: axis !== current });
+    }
+  }
+  const fresh = options.filter((o) => o.fresh);
+  const pool = fresh.length ? fresh : options;
+  if (!pool.length) return { axis: (current + 1) % 3, sgn: Math.random() < 0.5 ? 1 : -1 };
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function startRoll() {
+  if (roll.active) return;
+  const { axis, sgn } = pickTarget();
+  const down = AXES[axis].clone().multiplyScalar(sgn);
+  const land = new THREE.Quaternion().setFromUnitVectors(down, DOWN);
+  const twist = new THREE.Quaternion().setFromAxisAngle(DOWN, (Math.floor(Math.random() * 4) * Math.PI) / 2);
+  roll.from.copy(die.quaternion);
+  roll.to.copy(twist.multiply(land));
+  roll.wobbleAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+  roll.wobble = reduceMotion ? 0 : (Math.random() < 0.5 ? -1 : 1) * Math.PI * (1.1 + Math.random() * 0.6);
+  roll.t = 0;
+  roll.active = true;
+  roll.cooldown = 0;
+}
+
+const spin = new THREE.Quaternion();
+function stepRoll(dt) {
+  if (!roll.active) return;
+  roll.t = Math.min(1, roll.t + dt / roll.duration);
+  const e = roll.t < 0.5 ? 4 * roll.t ** 3 : 1 - Math.pow(-2 * roll.t + 2, 3) / 2;  // easeInOutCubic
+  die.quaternion.slerpQuaternions(roll.from, roll.to, e);
+  spin.setFromAxisAngle(roll.wobbleAxis, roll.wobble * Math.sin(Math.PI * e));
+  die.quaternion.multiply(spin);
+  die.position.y = reduceMotion ? 0 : Math.sin(Math.PI * e) * 0.42;
+  if (roll.t >= 1) {
+    roll.active = false;
+    die.quaternion.copy(roll.to);
+    die.position.y = 0;
+  }
+}
+
+function activeIndex() {
+  let best = 1, bestPull = -1;
+  for (let i = 0; i < 3; i++) {
+    const pull = Math.abs(scratch.copy(AXES[i]).applyQuaternion(die.quaternion).y);
+    if (pull > bestPull) { bestPull = pull; best = i; }
+  }
+  return best;
+}
+
+// Start face-down on Y with every charge in its +end bulb, which the identity
+// orientation puts on top — so the Y hourglass is already running.
+glasses.forEach((h) => { h.fillPlus = 1; });
+
+/* ------------------------------------------------------------------ *
+ * Loop
+ * ------------------------------------------------------------------ */
+const elAxis = document.getElementById('r-axis');
+const elFlow = document.getElementById('r-flow');
+const elLeft = document.getElementById('r-left');
+const btnRoll = document.getElementById('btn-roll');
+const btnAuto = document.getElementById('btn-auto');
+
+btnAuto.setAttribute('aria-pressed', String(autoRoll));
+btnRoll.addEventListener('click', startRoll);
+btnAuto.addEventListener('click', () => {
+  autoRoll = !autoRoll;
+  btnAuto.setAttribute('aria-pressed', String(autoRoll));
+});
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); startRoll(); }
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+let hudAt = 0;
+
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const now = clock.elapsedTime;
+
+  stepRoll(dt);
+  if (!roll.active && !reduceMotion) die.position.y = Math.sin(now * 0.9) * 0.025;
+
+  for (const h of glasses) h.step(dt, die.quaternion);
+
+  const act = glasses[activeIndex()];
+  if (!roll.active) {
+    if (act.remaining <= 0.001 || act.gate < 0.4) roll.cooldown += dt;
+    else roll.cooldown = 0;
+    if (autoRoll && roll.cooldown > 0.9) startRoll();
+  }
+
+  if (now - hudAt > 0.1) {
+    hudAt = now;
+    const i = activeIndex();
+    elAxis.textContent = AXIS_NAMES[i] + (glasses[i].gravity > 0 ? '−' : '+') + ' up';
+    const running = act.gate > 0.5 && act.remaining > 0.001;
+    elFlow.textContent = running ? 'running' : roll.active ? 'tumbling' : 'settled';
+    elFlow.className = running ? 'run' : '';
+    elLeft.textContent = (act.remaining * DRAIN).toFixed(1) + 's';
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
