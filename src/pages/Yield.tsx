@@ -13,10 +13,32 @@ import { findChain, rpcUrl } from '../config/supported-chains'
 import type { PoolInfo } from '../lib/uniswapDiscovery'
 import { Card, Btn, Mono, CopyChip } from '../ui/components'
 import { Block, Field } from '../ui/form'
+import { CompoundProjection } from '../ui/CompoundProjection'
 import { IconTrend, IconAlert, IconCheck } from '../ui/icons'
 
 const feeLabel = (fee: number) => `${(fee / 10_000).toFixed(2)}%`
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
+
+// Display-only estimate used to value a non-stable leg in the projection card.
+const ETH_PRICE_USD_ESTIMATE = 3000
+// Fallback APR for the projection when the pool reports insufficient data.
+const DEFAULT_PROJECTION_APR = 0.05
+
+/** Rough USD value of the deposit for the projection: stable legs count 1:1, a
+ * non-stable leg is valued at a fixed estimate. Illustrative, not a quote. */
+function estimatePositionValueUsd(
+  token0Symbol: string,
+  token1Symbol: string,
+  amount0: string,
+  amount1: string,
+): number {
+  const legUsd = (symbol: string, human: string) => {
+    const n = Number(human)
+    if (!Number.isFinite(n) || n <= 0) return 0
+    return /usd|dai/i.test(symbol) ? n : n * ETH_PRICE_USD_ESTIMATE
+  }
+  return legUsd(token0Symbol, amount0) + legUsd(token1Symbol, amount1)
+}
 
 // A signed delegation grants a real permission; keep the window it stays
 // redeemable short rather than open-ended.
@@ -52,6 +74,7 @@ export default function Yield() {
   const [signingIndex, setSigningIndex] = useState(0)
   const [planError, setPlanError] = useState<string | null>(null)
   const [storedPlan, setStoredPlan] = useState<StoredYieldPlan | null>(null)
+  const [autoCompound, setAutoCompound] = useState(false)
 
   const recommended = pools[0] ?? null
   const pool = selectedPool ?? recommended
@@ -95,6 +118,13 @@ export default function Yield() {
   const hasBalance0 = balances ? amount0Raw <= balances.token0 : false
   const hasBalance1 = balances ? amount1Raw <= balances.token1 : false
   const canDelegate = Boolean(pool && agentAddress && amount0Raw > 0n && amount1Raw > 0n && hasBalance0 && hasBalance1)
+
+  const positionValueUsd = useMemo(
+    () => (pool ? estimatePositionValueUsd(pool.token0.symbol, pool.token1.symbol, amount0, amount1) : 0),
+    [pool, amount0, amount1],
+  )
+  const projectionApr = pool?.apy ?? DEFAULT_PROJECTION_APR
+  const aprIsEstimate = pool?.apy == null
 
   async function handleDelegate() {
     if (!pool || !agentAddress) return
@@ -306,6 +336,14 @@ export default function Yield() {
               )}
             </Field>
           </div>
+
+          <CompoundProjection
+            positionValueUsd={positionValueUsd}
+            apr={projectionApr}
+            aprIsEstimate={aprIsEstimate}
+            enabled={autoCompound}
+            onToggle={setAutoCompound}
+          />
 
           {planError && (
             <div className="flex items-center gap-2 text-pending text-sm">
