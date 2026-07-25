@@ -9,8 +9,15 @@ import type { Address, Hex } from 'viem'
  * proposed it. No auth, GET only.
  */
 
-/** Chain id → Safe Transaction Service base URL. The web app runs on Base Sepolia. */
+/**
+ * Chain id → Safe Transaction Service base URL. Must cover every chain in
+ * `SUPPORTED_CHAINS` a delegation can be signed on: a missing entry makes the
+ * message unreadable, so the publisher rejects an otherwise valid delegation
+ * with "message not found". The legacy per-chain hosts 308-redirect to
+ * `api.safe.global/tx-service/<slug>`; `fetch` follows that, no API key needed.
+ */
 const TX_SERVICE_URL: Record<number, string> = {
+  1: 'https://safe-transaction-mainnet.safe.global',
   84532: 'https://safe-transaction-base-sepolia.safe.global',
   11155111: 'https://safe-transaction-sepolia.safe.global',
   8453: 'https://safe-transaction-base.safe.global',
