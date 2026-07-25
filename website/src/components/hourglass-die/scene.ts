@@ -412,7 +412,7 @@ export class HourglassDie {
 
   private pixelRatio: number;
   private running = false;
-  private autoCycle = true;
+  private paused = false;
   private lastTime = 0;
   private pending = 0;
   private elapsed = 0;
@@ -428,13 +428,10 @@ export class HourglassDie {
   private readonly roll = {
     active: false,
     t: 0,
-    duration: 1.15,
+    duration: 0.55,
     from: new THREE.Quaternion(),
     to: new THREE.Quaternion(),
-    wobbleAxis: new THREE.Vector3(),
-    wobble: 0,
   };
-  private readonly spin = new THREE.Quaternion();
 
   constructor(
     private readonly container: HTMLElement,
@@ -444,7 +441,7 @@ export class HourglassDie {
     this.drain = options.drainSeconds ?? 11;
     this.onSettle = options.onSettle;
     this.onRollStart = options.onRollStart;
-    this.roll.duration = this.reducedMotion ? 0.35 : 1.15;
+    this.roll.duration = this.reducedMotion ? 0.25 : 0.55;
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -510,9 +507,19 @@ export class HourglassDie {
     this.renderer.setAnimationLoop(null);
   }
 
-  /** Stop the die picking its own faces — the visitor is driving now. */
-  setAutoCycle(on: boolean): void {
-    this.autoCycle = on;
+  /**
+   * Hold the sand while someone is reading. Time stops rather than the cycle
+   * being cancelled, so the die still rolls the moment the last grain lands.
+   */
+  setPaused(on: boolean): void {
+    this.paused = on;
+  }
+
+  /** Tip the die onto the next face. */
+  rollNext(): void {
+    if (this.roll.active) return;
+    const active = this.glasses[this.activeIndex()];
+    this.startRoll(CYCLE[(CYCLE.indexOf(active.axis) + 1) % CYCLE.length]);
   }
 
   /** Roll so `axis` stands vertical, landing with sand in the upper bulb. */
@@ -680,15 +687,13 @@ export class HourglassDie {
   private startRoll(axis: AxisIndex): void {
     // Land with the fuller bulb on top, so the hourglass always has something to run.
     const sgn = this.glasses[axis].fillPlus >= 0.5 ? -1 : 1;
-    const down = AXES[axis].clone().multiplyScalar(sgn);
-    const land = new THREE.Quaternion().setFromUnitVectors(down, DOWN);
-    const twist = new THREE.Quaternion().setFromAxisAngle(DOWN, (Math.floor(Math.random() * 4) * Math.PI) / 2);
+    /* Shortest way there: rotate from where that axis currently points to down,
+       and compose onto the pose we're in. Deriving the target from the die's rest
+       frame instead would spin it most of the way round to land the same face. */
+    scratch.copy(AXES[axis]).multiplyScalar(sgn).applyQuaternion(this.die.quaternion);
+    const turn = new THREE.Quaternion().setFromUnitVectors(scratch, DOWN);
     this.roll.from.copy(this.die.quaternion);
-    this.roll.to.copy(twist.multiply(land));
-    this.roll.wobbleAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    this.roll.wobble = this.reducedMotion
-      ? 0
-      : (Math.random() < 0.5 ? -1 : 1) * Math.PI * (1.1 + Math.random() * 0.6);
+    this.roll.to.copy(turn.multiply(this.die.quaternion));
     this.roll.t = 0;
     this.roll.active = true;
     this.onRollStart?.();
@@ -698,11 +703,9 @@ export class HourglassDie {
     if (!this.roll.active) return;
     this.roll.t = Math.min(1, this.roll.t + dt / this.roll.duration);
     const t = this.roll.t;
-    const e = t < 0.5 ? 4 * t ** 3 : 1 - Math.pow(-2 * t + 2, 3) / 2; // easeInOutCubic
+    const e = 1 - Math.pow(1 - t, 3); // easeOutCubic — leaves fast, settles soft
     this.die.quaternion.slerpQuaternions(this.roll.from, this.roll.to, e);
-    this.spin.setFromAxisAngle(this.roll.wobbleAxis, this.roll.wobble * Math.sin(Math.PI * e));
-    this.die.quaternion.multiply(this.spin);
-    this.die.position.y = this.reducedMotion ? 0 : Math.sin(Math.PI * e) * 0.42;
+    this.die.position.y = this.reducedMotion ? 0 : Math.sin(Math.PI * e) * 0.14;
     if (this.roll.t >= 1) {
       this.roll.active = false;
       this.die.quaternion.copy(this.roll.to);
@@ -749,12 +752,12 @@ export class HourglassDie {
       this.die.position.y = Math.sin(this.elapsed * 0.9) * 0.025;
     }
 
-    for (const h of this.glasses) h.step(dt, this.die.quaternion, this.drain);
+    for (const h of this.glasses) h.step(this.paused ? 0 : dt, this.die.quaternion, this.drain);
 
     // The last grain lands and the die goes straight over — a spent hourglass
     // sitting still reads as broken.
     const active = this.glasses[this.activeIndex()];
-    if (!this.roll.active && this.autoCycle && active.remaining <= 0.001) {
+    if (!this.roll.active && active.remaining <= 0.001) {
       this.startRoll(CYCLE[(CYCLE.indexOf(active.axis) + 1) % CYCLE.length]);
     }
 

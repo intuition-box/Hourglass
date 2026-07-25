@@ -21,7 +21,6 @@ const DESKTOP = '(min-width: 768px)';
 export function AccessShowcase({ children }: { children: ReactNode }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dieRef = useRef<HourglassDie | null>(null);
-  const drivingRef = useRef(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [active, setActive] = useState<string>(ACCESSES[0].id);
@@ -85,19 +84,19 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
 
   const choose = useCallback(
     (access: Access) => {
-      drivingRef.current = true;
-      dieRef.current?.setAutoCycle(false);
       setActive(access.id);
       rollTo(access);
     },
     [rollTo],
   );
 
-  // Pausing while read, resuming when left alone — unless the visitor has taken over.
-  const pause = useCallback(() => dieRef.current?.setAutoCycle(false), []);
+  /* Hovering or focusing the hero holds the sand where it is, so copy never
+     changes out from under someone reading it (WCAG 2.2.2). The die still rolls
+     the instant a glass runs dry — it just can't run dry while you're there. */
+  const pause = useCallback(() => dieRef.current?.setPaused(true), []);
   const resume = useCallback(() => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    if (!drivingRef.current) dieRef.current?.setAutoCycle(true);
+    dieRef.current?.setPaused(false);
   }, []);
 
   const current = ACCESSES.find((a) => a.id === active) ?? ACCESSES[0];
@@ -193,6 +192,13 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
               className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(88,230,184,0.10),transparent_62%)]"
             />
           )}
+
+          <button
+            type="button"
+            aria-label="Roll the die to the next access"
+            className="absolute inset-0 z-20 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)]"
+            onClick={() => dieRef.current?.rollNext()}
+          />
 
           {/* z-10: the scene appends its canvas last, so without it the glass
               paints over the copy */}
