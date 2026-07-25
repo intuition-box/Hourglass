@@ -66,6 +66,10 @@ RUN mkdir -p /data /config
 COPY --from=site /site/out /srv
 COPY --from=app /app/dist /srv/safe-app
 
+# Branding playgrounds: plain static pages, no build step. Caddy's root
+# file_server picks them up, so branding/x.html is served at /branding/x.
+COPY branding /srv/branding
+
 # The publisher app (source + deps) to run with bun.
 COPY --from=app /app/node_modules /publisher/node_modules
 COPY --from=app /app/package.json /publisher/package.json
