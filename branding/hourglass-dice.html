@@ -121,11 +121,10 @@
       <div>axis&nbsp;&nbsp;&nbsp;&nbsp;<b id="r-axis">—</b></div>
       <div>flow&nbsp;&nbsp;&nbsp;&nbsp;<b id="r-flow">—</b></div>
       <div>left&nbsp;&nbsp;&nbsp;&nbsp;<b id="r-left">—</b></div>
-      <div class="hint">drag to orbit · <kbd>space</kbd> to roll</div>
+      <div class="hint">drag to orbit · click the die or <kbd>space</kbd> to roll</div>
     </div>
     <div class="controls">
       <button id="btn-roll" type="button">Roll</button>
-      <button id="btn-auto" type="button" aria-pressed="true">Auto-roll</button>
     </div>
   </div>
 </div>
@@ -162,7 +161,7 @@ const T_MAX    = 0.74;   // where the bulb is widest; beyond it, an ellipsoid do
 const FLARE    = 4.0;    // how long the stem stays thin before the bulb opens
 const WALL     = 0.93;   // sand surface inset from the glass wall
 const CAPACITY = 0.9;    // sand charge, as a fraction of one bulb's volume
-const DRAIN    = 15;     // seconds for a full bulb to empty
+const DRAIN    = 11;     // seconds for a full bulb to empty
 
 const DOWN = new THREE.Vector3(0, -1, 0);
 const AXES = [
@@ -664,62 +663,41 @@ glasses.forEach((h) => die.add(h.group));
 }
 
 /* ------------------------------------------------------------------ *
- * Rolling: land on a face whose vertical hourglass still has sand up top.
+ * Rolling: tip onto the next face in the cycle, by the shortest way there.
  * ------------------------------------------------------------------ */
 const roll = {
   active: false,
   t: 0,
-  // reduced motion still re-rolls — the die has to keep running — but it lands
-  // fast and without the tumble
-  duration: reduceMotion ? 0.35 : 1.15,
+  duration: reduceMotion ? 0.25 : 0.55,
   from: new THREE.Quaternion(),
   to: new THREE.Quaternion(),
-  wobbleAxis: new THREE.Vector3(),
-  wobble: 0,
-  cooldown: 0,
 };
-let autoRoll = true;
 
-function pickTarget() {
-  const current = activeIndex();
-  const options = [];
-  for (let axis = 0; axis < 3; axis++) {
-    for (const sgn of [1, -1]) {
-      // sgn = +1 → local +axis points down, so the upper bulb is the -axis one
-      const upper = sgn > 0 ? 1 - glasses[axis].fillPlus : glasses[axis].fillPlus;
-      if (upper > 0.15) options.push({ axis, sgn, fresh: axis !== current });
-    }
-  }
-  const fresh = options.filter((o) => o.fresh);
-  const pool = fresh.length ? fresh : options;
-  if (!pool.length) return { axis: (current + 1) % 3, sgn: Math.random() < 0.5 ? 1 : -1 };
-  return pool[Math.floor(Math.random() * pool.length)];
-}
+/** The order the die visits its faces. */
+const CYCLE = [1, 0, 2];
 
 function startRoll() {
   if (roll.active) return;
-  const { axis, sgn } = pickTarget();
-  const down = AXES[axis].clone().multiplyScalar(sgn);
-  const land = new THREE.Quaternion().setFromUnitVectors(down, DOWN);
-  const twist = new THREE.Quaternion().setFromAxisAngle(DOWN, (Math.floor(Math.random() * 4) * Math.PI) / 2);
+  const axis = CYCLE[(CYCLE.indexOf(activeIndex()) + 1) % CYCLE.length];
+  // Land with the fuller bulb on top, so the hourglass always has something to run.
+  const sgn = glasses[axis].fillPlus >= 0.5 ? -1 : 1;
+  /* Shortest way there: rotate from where that axis currently points to down,
+     and compose onto the pose we're in. Deriving the target from the die's rest
+     frame instead would spin it most of the way round to land the same face. */
+  const facing = AXES[axis].clone().multiplyScalar(sgn).applyQuaternion(die.quaternion);
+  const turn = new THREE.Quaternion().setFromUnitVectors(facing, DOWN);
   roll.from.copy(die.quaternion);
-  roll.to.copy(twist.multiply(land));
-  roll.wobbleAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-  roll.wobble = reduceMotion ? 0 : (Math.random() < 0.5 ? -1 : 1) * Math.PI * (1.1 + Math.random() * 0.6);
+  roll.to.copy(turn.multiply(die.quaternion));
   roll.t = 0;
   roll.active = true;
-  roll.cooldown = 0;
 }
 
-const spin = new THREE.Quaternion();
 function stepRoll(dt) {
   if (!roll.active) return;
   roll.t = Math.min(1, roll.t + dt / roll.duration);
-  const e = roll.t < 0.5 ? 4 * roll.t ** 3 : 1 - Math.pow(-2 * roll.t + 2, 3) / 2;  // easeInOutCubic
+  const e = 1 - Math.pow(1 - roll.t, 3);  // easeOutCubic — leaves fast, settles soft
   die.quaternion.slerpQuaternions(roll.from, roll.to, e);
-  spin.setFromAxisAngle(roll.wobbleAxis, roll.wobble * Math.sin(Math.PI * e));
-  die.quaternion.multiply(spin);
-  die.position.y = reduceMotion ? 0 : Math.sin(Math.PI * e) * 0.42;
+  die.position.y = reduceMotion ? 0 : Math.sin(Math.PI * e) * 0.14;
   if (roll.t >= 1) {
     roll.active = false;
     die.quaternion.copy(roll.to);
@@ -747,16 +725,23 @@ const elAxis = document.getElementById('r-axis');
 const elFlow = document.getElementById('r-flow');
 const elLeft = document.getElementById('r-left');
 const btnRoll = document.getElementById('btn-roll');
-const btnAuto = document.getElementById('btn-auto');
 
-btnAuto.setAttribute('aria-pressed', String(autoRoll));
 btnRoll.addEventListener('click', startRoll);
-btnAuto.addEventListener('click', () => {
-  autoRoll = !autoRoll;
-  btnAuto.setAttribute('aria-pressed', String(autoRoll));
-});
 addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); startRoll(); }
+});
+
+/* A click on the die rolls it — but the same canvas is the orbit control, so
+   only a press that neither travelled nor lingered counts as a click. */
+let press = null;
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  press = { x: e.clientX, y: e.clientY, at: clock.elapsedTime };
+});
+renderer.domElement.addEventListener('pointerup', (e) => {
+  if (!press) return;
+  const moved = Math.hypot(e.clientX - press.x, e.clientY - press.y);
+  if (moved < 5 && clock.elapsedTime - press.at < 0.4) startRoll();
+  press = null;
 });
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -804,17 +789,15 @@ renderer.setAnimationLoop(() => {
 
   const live = activeIndex();
   const act = glasses[live];
-  if (!roll.active) {
-    if (act.remaining <= 0.001 || act.gate < 0.4) roll.cooldown += dt;
-    else roll.cooldown = 0;
-    if (autoRoll && roll.cooldown > 0.9) startRoll();
-  }
+  // The last grain lands and the die goes straight over — a spent hourglass
+  // sitting still reads as broken.
+  if (!roll.active && act.remaining <= 0.001) startRoll();
 
   if (now - hudAt > 0.1) {
     hudAt = now;
     elAxis.textContent = AXIS_NAMES[live] + (act.gravity > 0 ? '−' : '+') + ' up';
     const running = act.gate > 0.5 && act.remaining > 0.001;
-    elFlow.textContent = running ? 'running' : roll.active ? 'tumbling' : 'settled';
+    elFlow.textContent = running ? 'running' : roll.active ? 'rolling' : 'settled';
     elFlow.className = running ? 'run' : '';
     elLeft.textContent = (act.remaining * DRAIN).toFixed(1) + 's';
   }
