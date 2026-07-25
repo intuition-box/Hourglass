@@ -64,6 +64,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
       observer?.disconnect();
       die?.dispose();
       dieRef.current = null;
@@ -90,13 +91,8 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
     [rollTo],
   );
 
-  /* Hovering or focusing the hero holds the sand where it is, so copy never
-     changes out from under someone reading it (WCAG 2.2.2). The die still rolls
-     the instant a glass runs dry — it just can't run dry while you're there. */
-  const pause = useCallback(() => dieRef.current?.setPaused(true), []);
-  const resume = useCallback(() => {
+  const cancelPreview = useCallback(() => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    dieRef.current?.setPaused(false);
   }, []);
 
   const current = ACCESSES.find((a) => a.id === active) ?? ACCESSES[0];
@@ -104,10 +100,6 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
   return (
     <div
       className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,480px)_minmax(0,1fr)] lg:gap-12 lg:flex-1 lg:content-center"
-      onMouseEnter={pause}
-      onMouseLeave={resume}
-      onFocusCapture={pause}
-      onBlurCapture={resume}
     >
       {/* min-w-0: without it the h1's fixed line becomes the column's min-content
           width and pushes the grid past the viewport on a phone */}
@@ -148,6 +140,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
                     href={access.href}
                     className={className}
                     onMouseEnter={() => preview(access)}
+                    onMouseLeave={cancelPreview}
                     onFocus={() => preview(access)}
                     onClick={() => choose(access)}
                   >
@@ -159,6 +152,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
                     className={className}
                     aria-pressed={isActive}
                     onMouseEnter={() => preview(access)}
+                    onMouseLeave={cancelPreview}
                     onFocus={() => preview(access)}
                     onClick={() => choose(access)}
                   >

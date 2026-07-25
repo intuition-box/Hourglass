@@ -412,7 +412,6 @@ export class HourglassDie {
 
   private pixelRatio: number;
   private running = false;
-  private paused = false;
   private lastTime = 0;
   private pending = 0;
   private elapsed = 0;
@@ -505,14 +504,6 @@ export class HourglassDie {
     if (!this.running) return;
     this.running = false;
     this.renderer.setAnimationLoop(null);
-  }
-
-  /**
-   * Hold the sand while someone is reading. Time stops rather than the cycle
-   * being cancelled, so the die still rolls the moment the last grain lands.
-   */
-  setPaused(on: boolean): void {
-    this.paused = on;
   }
 
   /** Tip the die onto the next face. */
@@ -752,7 +743,7 @@ export class HourglassDie {
       this.die.position.y = Math.sin(this.elapsed * 0.9) * 0.025;
     }
 
-    for (const h of this.glasses) h.step(this.paused ? 0 : dt, this.die.quaternion, this.drain);
+    for (const h of this.glasses) h.step(dt, this.die.quaternion, this.drain);
 
     // The last grain lands and the die goes straight over — a spent hourglass
     // sitting still reads as broken.
