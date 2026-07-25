@@ -413,12 +413,25 @@ const grain = grainTexture();
 
 const GRAINS = 80;
 
+/* One colour per axis, so all three charges stay readable at once. Index
+   matches AXES: X, Y, Z. */
+const SAND = [
+  { tone: 0x00c8ff, glow: 0x004659 },
+  { tone: 0x1fff9f, glow: 0x0b5937 },
+  { tone: 0xa855ff, glow: 0x3b1e59 },
+];
+
 class Hourglass {
   constructor(axisIndex) {
     this.axis = axisIndex;
     this.fillPlus = 1;   // fraction of the sand charge sitting in the +Y bulb
-    this.gravity = 0;    // +1 when local +Y points straight down
+    this.gravity = -1;   // +1 when local +Y points straight down
     this.gate = 0;       // how much of the flow rate gravity allows right now
+
+    this.tone = new THREE.Color(SAND[axisIndex].tone);
+    this.toneIdle = this.tone.clone().multiplyScalar(0.6);
+    this.glow = new THREE.Color(SAND[axisIndex].glow);
+    this.glowIdle = this.glow.clone().multiplyScalar(0.4);
 
     this.group = new THREE.Group();
     if (axisIndex === 0) this.group.rotation.z = -Math.PI / 2;
@@ -451,11 +464,11 @@ class Hourglass {
     // Sand stays opaque: transparent materials are sorted per object, and every
     // object here shares the same centre, so anything translucent would flicker.
     this.sandMat = new THREE.MeshStandardMaterial({
-      color: 0x58e6b8,
+      color: this.tone,
       roughness: 0.95,
       metalness: 0,
       envMapIntensity: 0.55,
-      emissive: 0x083328,
+      emissive: this.glow.clone(),
       side: THREE.DoubleSide,
     });
     this.plus = new SandSurface(this.sandMat);
@@ -463,7 +476,10 @@ class Hourglass {
     this.group.add(this.plus.mesh, this.minus.mesh);
 
     // the falling column
-    this.streamMat = new THREE.MeshBasicMaterial({ color: 0x6fe9c4, transparent: true, opacity: 0, depthWrite: false });
+    const white = new THREE.Color(0xffffff);
+    this.streamMat = new THREE.MeshBasicMaterial({
+      color: this.tone.clone().lerp(white, 0.35), transparent: true, opacity: 0, depthWrite: false,
+    });
     this.stream = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.024, 1, 12, 1, true), this.streamMat);
     this.stream.renderOrder = 20;
     this.group.add(this.stream);
@@ -473,7 +489,7 @@ class Hourglass {
     this.grainGeo = new THREE.BufferGeometry();
     this.grainGeo.setAttribute('position', new THREE.BufferAttribute(gp, 3));
     this.grainMat = new THREE.PointsMaterial({
-      size: 0.035, map: grain, color: 0xd8fff0,
+      size: 0.035, map: grain, color: this.tone.clone().lerp(white, 0.65),
       transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     this.grains = new THREE.Points(this.grainGeo, this.grainMat);
@@ -499,7 +515,9 @@ class Hourglass {
 
   step(dt, quaternion) {
     const pull = -scratch.copy(AXES[this.axis]).applyQuaternion(quaternion).y;  // >0 → local +Y points down
-    this.gravity = Math.sign(pull) || 1;
+    // Lying flat, `pull` is zero give or take float noise; keeping the last real
+    // sign stops the resting sand from flipping between heap and crater shapes.
+    if (Math.abs(pull) > 0.05) this.gravity = pull > 0 ? 1 : -1;
     this.gate = smoothstep(0.45, 0.9, Math.abs(pull));
 
     const flowing = this.gate * (this.remaining > 0 ? 1 : 0);
@@ -518,11 +536,12 @@ class Hourglass {
     this.drawBulb(lower > 0 ? this.minus : this.plus, -lower, inUpper, false);
     const lowerSurface = this.drawBulb(lower > 0 ? this.plus : this.minus, lower, inLower, true);
 
-    // the two idle axes go inert, so the running one reads at a glance
+    // idle axes keep their colour, just unlit — their sand is visibly parked,
+    // not missing
     const active = this.gate > 0.5;
-    this.sandMat.color.setHex(active ? 0x58e6b8 : 0x3a4c53);
-    this.sandMat.emissive.setHex(active ? 0x083328 : 0x000000);
-    this.glassMat.opacity = active ? 0.55 : 0.3;
+    this.sandMat.color.copy(active ? this.tone : this.toneIdle);
+    this.sandMat.emissive.copy(active ? this.glow : this.glowIdle);
+    this.glassMat.opacity = active ? 0.55 : 0.34;
 
     // column from the neck down to the heap
     const run = flowing > 0.02 && inUpper > 0.001;
