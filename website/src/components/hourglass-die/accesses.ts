@@ -11,6 +11,8 @@ export interface Advantage {
   rest: string;
   /** Protocol this claim rests on, shown as a mark on the chip. */
   brand?: string;
+  /** Its logo under /brands. Absent when we have no asset — the name shows instead. */
+  logo?: string;
 }
 
 export interface Access {
@@ -38,9 +40,15 @@ export const ACCESSES: Access[] = [
         lead: 'Sign once',
         rest: 'one audited delegation, no monthly signing burden',
         brand: 'MetaMask',
+        logo: '/brands/metamask.png',
       },
       { lead: 'Capped on-chain', rest: 'never above the agreed amount, never twice' },
-      { lead: 'Non-custodial', rest: 'funds stay in your Safe until the moment of charge' },
+      {
+        lead: 'Non-custodial',
+        rest: 'funds stay in your Safe until the moment of charge',
+        brand: 'Safe',
+        logo: '/brands/safe.svg',
+      },
       { lead: 'Charged every period', rest: 'by the receiver, no subsequent signers needed' },
       { lead: 'Revocable', rest: 'cancel any agreement on-chain, at any time' },
     ],
@@ -54,8 +62,18 @@ export const ACCESSES: Access[] = [
     tone: '#00c8ff',
     advantages: [
       { lead: 'Scoped permissions', rest: 'the mandate bounds every swap, on-chain' },
-      { lead: 'Decentralized agent', rest: 'no server you have to trust', brand: '0G' },
-      { lead: 'Real routing', rest: 'strategies execute against live liquidity', brand: 'Uniswap' },
+      {
+        lead: 'Decentralized agent',
+        rest: 'no server you have to trust',
+        brand: '0G',
+        logo: '/brands/0g.svg',
+      },
+      {
+        lead: 'Real routing',
+        rest: 'strategies execute against live liquidity',
+        brand: 'Uniswap',
+        logo: '/brands/uniswap.png',
+      },
     ],
   },
   {
@@ -69,6 +87,7 @@ export const ACCESSES: Access[] = [
         lead: 'Your treasury is the pool',
         rest: 'grant permission for your funds to provide liquidity',
         brand: '1inch',
+        logo: '/brands/1inch.png',
       },
       { lead: 'Earn fees', rest: 'the spread accrues to you, not to a protocol' },
       { lead: 'Keep custody', rest: 'your funds and your voting power never leave the Safe' },

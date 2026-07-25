@@ -222,11 +222,19 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
                     className="die-chip-bob block rounded-xl border border-fd-border bg-[color:var(--color-panel)]/80 px-4 py-3 backdrop-blur-sm"
                     style={{ animationDelay: `${i * -1.3}s` }}
                   >
-                    {adv.brand && (
-                      <span className="mb-2 block text-[10px] uppercase tracking-[0.16em] text-fd-muted-foreground">
-                        {adv.brand}
-                      </span>
-                    )}
+                    {adv.brand &&
+                      (adv.logo ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={adv.logo}
+                          alt={adv.brand}
+                          className="mb-2 block h-[18px] w-auto max-w-[64px] object-contain object-left"
+                        />
+                      ) : (
+                        <span className="mb-2 block text-[10px] uppercase tracking-[0.16em] text-fd-muted-foreground">
+                          {adv.brand}
+                        </span>
+                      ))}
                     <b className="text-[15px] font-semibold leading-tight" style={{ color: current.tone }}>
                       {adv.lead}
                     </b>

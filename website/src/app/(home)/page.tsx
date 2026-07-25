@@ -16,7 +16,7 @@ export default function Home() {
         {/* The headline spans both columns: at this size it needs the full width
             to stay on two lines. */}
         <h1 className="relative z-10 max-w-[1180px] text-[clamp(38px,4.8vw,66px)] font-semibold leading-[1.06] tracking-[-2px]">
-          Custody stays. The sand moves.
+          Delegate the flow, never the funds.
         </h1>
 
         <AccessShowcase>

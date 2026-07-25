@@ -433,7 +433,6 @@ export class HourglassDie {
     to: new THREE.Quaternion(),
     wobbleAxis: new THREE.Vector3(),
     wobble: 0,
-    cooldown: 0,
   };
   private readonly spin = new THREE.Quaternion();
 
@@ -692,7 +691,6 @@ export class HourglassDie {
       : (Math.random() < 0.5 ? -1 : 1) * Math.PI * (1.1 + Math.random() * 0.6);
     this.roll.t = 0;
     this.roll.active = true;
-    this.roll.cooldown = 0;
     this.onRollStart?.();
   }
 
@@ -753,14 +751,11 @@ export class HourglassDie {
 
     for (const h of this.glasses) h.step(dt, this.die.quaternion, this.drain);
 
+    // The last grain lands and the die goes straight over — a spent hourglass
+    // sitting still reads as broken.
     const active = this.glasses[this.activeIndex()];
-    if (!this.roll.active) {
-      if (active.remaining <= 0.001 || active.gate < 0.4) this.roll.cooldown += dt;
-      else this.roll.cooldown = 0;
-      if (this.autoCycle && this.roll.cooldown > 0.9) {
-        const next = CYCLE[(CYCLE.indexOf(active.axis) + 1) % CYCLE.length];
-        this.startRoll(next);
-      }
+    if (!this.roll.active && this.autoCycle && active.remaining <= 0.001) {
+      this.startRoll(CYCLE[(CYCLE.indexOf(active.axis) + 1) % CYCLE.length]);
     }
 
     // Camera orbits the die rather than the die spinning: the face that landed
