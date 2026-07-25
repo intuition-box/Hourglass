@@ -2,10 +2,11 @@
   "name": "hourglass-agent-runner",
   "private": true,
   "type": "module",
-  "description": "Self-contained Hourglass agent runners (limit order + DCA). Install, then run a runner with the operator's instruction JSON.",
+  "description": "Self-contained Hourglass agent runners (limit order + DCA + auto-compound). Install, then run a runner with the operator's instruction JSON (limit order / DCA) or the yield plan JSON (compound).",
   "scripts": {
     "limit-order": "bun run-limit-order.ts",
-    "dca": "bun run-dca.ts"
+    "dca": "bun run-dca.ts",
+    "compound": "bun run-compound.ts"
   },
   "dependencies": {
     "@metamask/smart-accounts-kit": "^1.7.0",

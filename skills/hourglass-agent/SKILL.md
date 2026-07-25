@@ -1,6 +1,6 @@
 ---
 name: hourglass-agent
-description: Set up and run an autonomous agent for a Hourglass strategy mandate — a recurring DCA buy or a single price-triggered limit order (buy-the-dip). Use this whenever a user wants to operate the agent side of a Hourglass Safe strategy — creating the agent wallet, funding its gas, discovering the delegation the Safe signed, and executing the swap. Trigger it whenever the user mentions Hourglass, a strategy mandate, a limit order, a Safe delegation to redeem, "run my DCA agent", "run my limit order", "set up the agent for my Safe", an agent address to paste into Hourglass, or executing a delegated swap on behalf of a Safe — even if they don't name Hourglass explicitly but describe an agent redeeming a Safe's delegation to DCA or to buy a dip.
+description: Set up and run an autonomous agent for a Hourglass strategy mandate — a recurring DCA buy, a single price-triggered limit order (buy-the-dip), or auto-compounding a yield position (harvest fees and reinvest). Use this whenever a user wants to operate the agent side of a Hourglass Safe strategy — creating the agent wallet, funding its gas, discovering the delegation the Safe signed (or loading the yield plan), and executing the swap or compound. Trigger it whenever the user mentions Hourglass, a strategy mandate, a limit order, a yield/LP position to compound, a Safe delegation to redeem, "run my DCA agent", "run my limit order", "run my compound agent", "auto-compound my position", "set up the agent for my Safe", an agent address to paste into Hourglass, or executing a delegated swap or compound on behalf of a Safe — even if they don't name Hourglass explicitly but describe an agent redeeming a Safe's delegation to DCA, buy a dip, or harvest-and-reinvest LP fees.
 compatibility: bun or node ≥ 20, foundry (cast), the uniswap swap-integration skill, network access to the Intuition graph and the Uniswap Trading API.
 ---
 
@@ -131,17 +131,28 @@ skill details two:
   `limitedCalls(1)` cap. The agent polls the price and fills once. See
   `references/execution-limit-order.md` and `scripts/run-limit-order.ts`.
 
-**The `limitedCalls` caveat is the discriminator**: a mandate that has one is a limit
-order, otherwise a DCA. Both discover and redeem the same way — the only differences
-are when the agent fires and whether it repeats.
+**The `limitedCalls` caveat is the discriminator** between the two swap strategies: a
+mandate that has one is a limit order, otherwise a DCA. Both discover and redeem the
+same way — the only differences are when the agent fires and whether it repeats.
 
-Hourglass supports other delegation types the team ships — yield positions
-(`exactExecution`, a fixed-calldata replay), subscriptions and streams
-(`erc20PeriodTransfer` / `erc20Streaming`, a `transfer` redeem). They follow the same
-shape: **discover → route on `scopeType` / `strategyKind` → execute**. When those types
-are stabilized, add a branch here and a matching `references/<type>.md`; the discover
-and redeem layers are already generic. Until then, this skill handles DCA and limit
-orders and skips mandates of other types rather than guessing at their execution.
+There is also a non-swap variant:
+
+- **Auto-compound** (`compound.terms.mode`: `agent | manual`) — harvest an LP position's
+  fees and reinvest them into the **same** position. Not a swap: a `functionCall` mandate
+  over the Uniswap v3 PositionManager (`collect` + `increaseLiquidity` only — no principal
+  withdrawal), redeemer-locked. It does **not** come from Intuition — it rides inside the
+  **yield plan JSON** (like `scripts/yield-agent.ts`), with salt-verified `terms` carrying
+  the mode/interval. Needs a one-time **Enable compounding** approval on the Safe. The
+  agent compounds only when the extra yield beats the gas (`projectAgentOptimal`). See
+  `references/execution-compound.md` and `scripts/run-compound.ts`.
+
+Hourglass supports further delegation types: the **yield mint** itself
+(`exactExecution`, a fixed-calldata replay) is driven by `scripts/yield-agent.ts`;
+subscriptions and streams (`erc20PeriodTransfer` / `erc20Streaming`, a `transfer`
+redeem) are not yet wired into this skill. They follow the same shape: **discover (or
+load the plan) → route on `scopeType` / `strategyKind` → execute**. When those are
+stabilized, add a branch here and a matching `references/<type>.md`; the discover and
+redeem layers are already generic.
 
 ## Reference files
 
@@ -153,3 +164,6 @@ orders and skips mandates of other types rather than guessing at their execution
   DCA, plus configuring and running `scripts/run-dca.ts`.
 - `references/execution-limit-order.md` — the same, for a single price-triggered limit
   order (poll → fill once), plus `scripts/run-limit-order.ts`.
+- `references/execution-compound.md` — harvesting an LP position's fees and reinvesting
+  them (gas-aware, agent | manual), driven from the yield plan JSON, plus
+  `scripts/run-compound.ts`.

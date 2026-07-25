@@ -2,13 +2,15 @@ import { type Address } from 'viem'
 import { mainnet, base, baseSepolia } from 'viem/chains'
 import { USDC_ADDRESS } from './supported-chains'
 
-/** Uniswap v3 Factory, per chain. Only Base Sepolia is wired — the web app's chain. */
+/** Uniswap v3 Factory, per chain. */
 export const UNISWAP_V3_FACTORY: Record<number, Address> = {
+  [base.id]: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD',
   [baseSepolia.id]: '0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24',
 }
 
 /** Uniswap v3 NonfungiblePositionManager, per chain. */
 export const UNISWAP_V3_POSITION_MANAGER: Record<number, Address> = {
+  [base.id]: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
   [baseSepolia.id]: '0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2',
 }
 
@@ -54,6 +56,10 @@ export interface CandidateToken {
  * explicit — Base Sepolia has near-zero real testnet liquidity outside these.
  */
 export const CANDIDATE_TOKENS: Record<number, CandidateToken[]> = {
+  [base.id]: [
+    { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
+    { address: USDC_ADDRESS[base.id], symbol: 'USDC', decimals: 6 },
+  ],
   [baseSepolia.id]: [
     { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
     { address: USDC_ADDRESS[baseSepolia.id], symbol: 'USDC', decimals: 6 },
