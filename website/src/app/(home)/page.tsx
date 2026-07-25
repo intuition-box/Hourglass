@@ -15,12 +15,14 @@ export default function Home() {
 
         {/* The headline spans both columns: at this size it needs the full width
             to stay on two lines. */}
-        <h1 className="relative z-10 max-w-[1180px] text-[clamp(38px,4.6vw,64px)] font-semibold leading-[1.06] tracking-[-2px]">
-          Bounded permissions for DAO treasuries.
+        <h1 className="relative z-10 max-w-[1180px] text-[clamp(38px,4.8vw,66px)] font-semibold leading-[1.06] tracking-[-2px]">
+          Custody stays. The sand moves.
         </h1>
 
         <AccessShowcase>
-          <p className="text-[17px] text-fd-muted-foreground">One signature. Three accesses.</p>
+          <p className="max-w-[46ch] text-[17px] text-fd-muted-foreground">
+            One signature, capped on-chain. Every grain visible and auditable.
+          </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-[18px]">
             <Link
