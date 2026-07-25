@@ -9,10 +9,10 @@ import type { AxisIndex, HourglassDie } from './scene';
  * The hero: three accesses on the left, the die on the right, and the active
  * access's advantages floating around it.
  *
- * The scene is a plain module — this component owns lifecycle only. It is also
- * where the die stays out of the visitor's way: the auto-cycle pauses on hover
- * or focus and stops for good once someone picks an access, because copy that
- * rewrites itself while you read it is hostile (WCAG 2.2.2).
+ * The scene is a plain module — this component owns lifecycle only, plus the
+ * rule that the highlight leads and the die follows. Pointing at an access
+ * repaints the list and the chips on the same frame; the die tips over after a
+ * short debounce and confirms it on landing.
  */
 
 /** three.js is ~150 KB gzipped; not worth it on a phone. */
@@ -22,8 +22,14 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const dieRef = useRef<HourglassDie | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rollingRef = useRef(false);
 
-  const [active, setActive] = useState<string>(ACCESSES[0].id);
+  /* Two sources of truth, deliberately: `settled` is the face the die is on,
+     `aimed` is what the visitor is pointing at. The highlight follows `aimed`
+     the instant it changes so it never waits on the animation. */
+  const [settled, setSettled] = useState<string>(ACCESSES[0].id);
+  const [aimed, setAimed] = useState<string | null>(null);
+  const aimedRef = useRef<string | null>(null);
   const [chipsIn, setChipsIn] = useState(true);
   const [live, setLive] = useState(false);
 
@@ -43,10 +49,18 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
       die = new Die(host, {
         reducedMotion,
         onSettle: (axis: AxisIndex) => {
-          setActive(accessByAxis(axis).id);
+          rollingRef.current = false;
+          setSettled(accessByAxis(axis).id);
+          setAimed(null);
+          aimedRef.current = null;
           setChipsIn(true);
         },
-        onRollStart: () => setChipsIn(false),
+        // Only fade the chips out when the die moved on its own. A visitor who
+        // pointed at an access is already looking at the answer.
+        onRollStart: () => {
+          rollingRef.current = true;
+          if (!aimedRef.current) setChipsIn(false);
+        },
       });
       dieRef.current = die;
       setLive(true);
@@ -75,26 +89,52 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
     dieRef.current?.setActive(access.axis);
   }, []);
 
+  const aim = useCallback((access: Access) => {
+    setAimed(access.id);
+    aimedRef.current = access.id;
+    setChipsIn(true);
+  }, []);
+
   const preview = useCallback(
     (access: Access) => {
+      aim(access);
+      // debounced so sweeping down the list doesn't send the die chasing
       if (hoverTimer.current) clearTimeout(hoverTimer.current);
-      hoverTimer.current = setTimeout(() => rollTo(access), 120);
+      hoverTimer.current = setTimeout(() => {
+        hoverTimer.current = null;
+        rollTo(access);
+      }, 120);
     },
-    [rollTo],
+    [aim, rollTo],
   );
 
   const choose = useCallback(
     (access: Access) => {
-      setActive(access.id);
+      if (hoverTimer.current) clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+      aim(access);
       rollTo(access);
     },
-    [rollTo],
+    [aim, rollTo],
   );
 
+  /* Pointer left before the die was sent anywhere — take the highlight back.
+     If the roll already started, the highlight stays and `onSettle` clears it. */
   const cancelPreview = useCallback(() => {
-    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+    // Mid-roll the highlight has to stand until the die lands, or it snaps back
+    // to the face being left behind. Otherwise take it back — including when
+    // the pointed-at access was already the live one and no roll happened.
+    if (!rollingRef.current) {
+      setAimed(null);
+      aimedRef.current = null;
+    }
   }, []);
 
+  const active = aimed ?? settled;
   const current = ACCESSES.find((a) => a.id === active) ?? ACCESSES[0];
 
   return (
