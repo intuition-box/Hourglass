@@ -1,14 +1,7 @@
 import Link from 'next/link';
 import { SafeAppRedirect } from '@/components/safe-app-redirect';
+import { AccessShowcase } from '@/components/hourglass-die';
 import { redeemRoute, safeGlobalUrl } from '@/lib/shared';
-
-const FEATURES: Array<{ lead: string; rest: string }> = [
-  { lead: 'Sign once', rest: 'remove the monthly signing burden from your signers' },
-  { lead: 'Capped on-chain', rest: 'never above the agreed amount, never twice' },
-  { lead: 'Non-custodial', rest: 'funds stay in your Safe until the moment of charge' },
-  { lead: 'Charged every period', rest: 'by the receiver, no subsequent signers needed' },
-  { lead: 'Revocable', rest: 'cancel any agreement on-chain, at any time' },
-];
 
 export default function Home() {
   return (
@@ -20,26 +13,16 @@ export default function Home() {
         {/* signature: a thin live stream down the right edge */}
         <div className="stream-edge absolute right-0 top-0 z-20 h-full w-1" aria-hidden="true" />
 
-        {/* background video — right half, full height, faded into the base */}
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 right-0 z-0 overflow-hidden" aria-hidden="true">
-          <video className="hero-video h-full w-full object-cover" src="/hero.mp4" autoPlay muted loop playsInline />
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                'linear-gradient(90deg, var(--color-base) 0%, rgba(10,10,11,0) 45%), linear-gradient(180deg, var(--color-base) 0%, rgba(10,10,11,0) 18%), linear-gradient(0deg, var(--color-base) 0%, rgba(10,10,11,0) 22%)',
-            }}
-          />
-        </div>
-
-        <div className="relative z-10 mt-12 max-w-[880px]">
-          <h1 className="text-[clamp(40px,5.2vw,64px)] font-semibold leading-[1.12] tracking-[-1.5px]">
+        <AccessShowcase>
+          <h1 className="text-[clamp(40px,4.4vw,56px)] font-semibold leading-[1.12] tracking-[-1.5px]">
             Recurring payments
             <br />
             for DAO treasuries.
           </h1>
 
-          <div className="mt-10 flex flex-wrap items-center gap-[18px]">
+          <p className="mt-5 text-[17px] text-fd-muted-foreground">One signature. Three accesses.</p>
+
+          <div className="mt-9 flex flex-wrap items-center gap-[18px]">
             <Link
               href={redeemRoute}
               className="group inline-flex items-stretch gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-base)]"
@@ -64,16 +47,7 @@ export default function Home() {
               Add to your Safe
             </a>
           </div>
-        </div>
-
-        <div className="relative z-10 mt-auto flex flex-col gap-3.5 pt-[120px]">
-          {FEATURES.map((f) => (
-            <p key={f.lead} className="text-[17px] text-fd-muted-foreground">
-              <b className="mr-1.5 font-semibold text-fd-foreground">{f.lead}</b>
-              {f.rest}
-            </p>
-          ))}
-        </div>
+        </AccessShowcase>
       </section>
     </>
   );

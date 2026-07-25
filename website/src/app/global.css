@@ -81,12 +81,35 @@ body {
   }
 }
 
+/* Advantage chips floating around the die. The scene writes --die-x / --die-y on
+   the canvas host every frame, so the parallax costs no React renders; the bob
+   lives on an inner element so the two transforms don't fight. */
+.die-chip {
+  transform: translate(
+    calc(var(--chip-tx, -50%) + var(--die-x, 0) * 10px),
+    calc(-50% + var(--die-y, 0) * 8px)
+  );
+  transition: opacity 0.35s ease;
+}
+.die-chip-bob {
+  animation: die-bob 6s ease-in-out infinite;
+}
+@keyframes die-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .stream-edge {
     animation: none;
   }
-  .hero-video {
-    display: none;
+  .die-chip-bob {
+    animation: none;
   }
 }
 
