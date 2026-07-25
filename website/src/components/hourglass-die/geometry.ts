@@ -21,10 +21,8 @@ export const PIECE = 0.93;
 /** Sand fills the pyramid itself, held off the glass by a hair so the coincident
     faces don't fight. There are six volumes here, not twelve. */
 export const SAND_INSET = 0.995;
-/** Sand charge, as a fraction of one pyramid's volume — so the glass is mostly
-    glass. Volume goes as the cube of the distance from the centre, so 30% by
-    volume is about 67% of the way out from the apex, not 30%. */
-export const CAPACITY = 0.3;
+/** A charge is exactly one pyramid of sand: a full piece, or empty glass. */
+export const CAPACITY = 1;
 
 export const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
