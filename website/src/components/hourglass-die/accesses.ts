@@ -9,6 +9,8 @@ import type { AxisIndex } from './scene';
 export interface Advantage {
   lead: string;
   rest: string;
+  /** Protocol this claim rests on, shown as a mark on the chip. */
+  brand?: string;
 }
 
 export interface Access {
@@ -32,7 +34,11 @@ export const ACCESSES: Access[] = [
     href: '/docs',
     tone: '#1fff9f',
     advantages: [
-      { lead: 'Sign once', rest: 'remove the monthly signing burden from your signers' },
+      {
+        lead: 'Sign once',
+        rest: 'one audited delegation, no monthly signing burden',
+        brand: 'MetaMask',
+      },
       { lead: 'Capped on-chain', rest: 'never above the agreed amount, never twice' },
       { lead: 'Non-custodial', rest: 'funds stay in your Safe until the moment of charge' },
       { lead: 'Charged every period', rest: 'by the receiver, no subsequent signers needed' },
@@ -48,8 +54,8 @@ export const ACCESSES: Access[] = [
     tone: '#00c8ff',
     advantages: [
       { lead: 'Scoped permissions', rest: 'the mandate bounds every swap, on-chain' },
-      { lead: 'Decentralized agent', rest: 'runs via 0g, not a server you have to trust' },
-      { lead: 'Uniswap routing', rest: 'strategies execute against real liquidity' },
+      { lead: 'Decentralized agent', rest: 'no server you have to trust', brand: '0G' },
+      { lead: 'Real routing', rest: 'strategies execute against live liquidity', brand: 'Uniswap' },
     ],
   },
   {
@@ -59,7 +65,11 @@ export const ACCESSES: Access[] = [
     descriptor: 'your treasury becomes a liquidity pool without leaving the Safe',
     tone: '#a855ff',
     advantages: [
-      { lead: 'Your treasury is the pool', rest: 'grant permission for your funds to provide liquidity' },
+      {
+        lead: 'Your treasury is the pool',
+        rest: 'grant permission for your funds to provide liquidity',
+        brand: '1inch',
+      },
       { lead: 'Earn fees', rest: 'the spread accrues to you, not to a protocol' },
       { lead: 'Keep custody', rest: 'your funds and your voting power never leave the Safe' },
     ],

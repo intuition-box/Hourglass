@@ -13,16 +13,16 @@ export default function Home() {
         {/* signature: a thin live stream down the right edge */}
         <div className="stream-edge absolute right-0 top-0 z-20 h-full w-1" aria-hidden="true" />
 
+        {/* The headline spans both columns: at this size it needs the full width
+            to stay on two lines. */}
+        <h1 className="relative z-10 max-w-[1180px] text-[clamp(38px,4.6vw,64px)] font-semibold leading-[1.06] tracking-[-2px]">
+          Bounded permissions for DAO treasuries.
+        </h1>
+
         <AccessShowcase>
-          <h1 className="text-[clamp(40px,4.4vw,56px)] font-semibold leading-[1.12] tracking-[-1.5px]">
-            Recurring payments
-            <br />
-            for DAO treasuries.
-          </h1>
+          <p className="text-[17px] text-fd-muted-foreground">One signature. Three accesses.</p>
 
-          <p className="mt-5 text-[17px] text-fd-muted-foreground">One signature. Three accesses.</p>
-
-          <div className="mt-9 flex flex-wrap items-center gap-[18px]">
+          <div className="mt-8 flex flex-wrap items-center gap-[18px]">
             <Link
               href={redeemRoute}
               className="group inline-flex items-stretch gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-base)]"

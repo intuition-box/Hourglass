@@ -104,7 +104,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,440px)_minmax(0,1fr)] lg:gap-16"
+      className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,480px)_minmax(0,1fr)] lg:gap-12 lg:flex-1 lg:content-center"
       onMouseEnter={pause}
       onMouseLeave={resume}
       onFocusCapture={pause}
@@ -115,7 +115,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-col">
         {children}
 
-        <ul className="mt-12 flex flex-col gap-1">
+        <ul className="mt-10 flex flex-col gap-1">
           {ACCESSES.map((access) => {
             const isActive = access.id === active;
             const inner = (
@@ -204,26 +204,35 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
                  ellipse: the cube is ~48% of the column, so a chip centred on the
                  ring would sit on its edges and become unreadable. */
               const side = cos > 0.25 ? 1 : cos < -0.25 ? -1 : 0;
-              const x = 50 + side * 24;
+              const x = 50 + side * 22;
               const y = 50 + Math.sin(angle) * 41;
               return (
                 <li
                   key={adv.lead}
-                  className="die-chip absolute w-[200px] text-[13px] leading-snug"
+                  className="die-chip absolute w-[220px]"
                   style={{
                     left: `${x}%`,
                     top: `${y}%`,
-                    textAlign: side > 0 ? 'left' : side < 0 ? 'right' : 'center',
                     ['--chip-tx' as string]: side > 0 ? '0%' : side < 0 ? '-100%' : '-50%',
                     opacity: chipsIn ? 1 : 0,
                     transitionDelay: chipsIn ? `${250 + i * 70}ms` : '0ms',
                   }}
                 >
-                  <span className="die-chip-bob block" style={{ animationDelay: `${i * -1.3}s` }}>
-                    <b className="font-semibold" style={{ color: current.tone }}>
+                  <span
+                    className="die-chip-bob block rounded-xl border border-fd-border bg-[color:var(--color-panel)]/80 px-4 py-3 backdrop-blur-sm"
+                    style={{ animationDelay: `${i * -1.3}s` }}
+                  >
+                    {adv.brand && (
+                      <span className="mb-2 block text-[10px] uppercase tracking-[0.16em] text-fd-muted-foreground">
+                        {adv.brand}
+                      </span>
+                    )}
+                    <b className="text-[15px] font-semibold leading-tight" style={{ color: current.tone }}>
                       {adv.lead}
-                    </b>{' '}
-                    <span className="text-fd-muted-foreground">{adv.rest}</span>
+                    </b>
+                    <span className="mt-1 block text-[13.5px] leading-snug text-fd-muted-foreground">
+                      {adv.rest}
+                    </span>
                   </span>
                 </li>
               );

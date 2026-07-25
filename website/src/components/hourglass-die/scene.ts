@@ -768,7 +768,7 @@ export class HourglassDie {
     if (!this.reducedMotion) this.orbit += dt * 0.12;
     this.pointerX += (this.aimX - this.pointerX) * Math.min(1, dt * 3);
     this.pointerY += (this.aimY - this.pointerY) * Math.min(1, dt * 3);
-    const radius = 7.8;
+    const radius = 8.2;
     this.camera.position.set(
       Math.sin(this.orbit) * radius + this.pointerX * 0.35,
       2.5 - this.pointerY * 0.3,
