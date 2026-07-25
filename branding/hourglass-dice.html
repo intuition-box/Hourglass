@@ -219,8 +219,12 @@ function levelAt(v) {
  * ------------------------------------------------------------------ */
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+/* The scene is fill-bound — five large blended surfaces stacked over the same
+   pixels — so resolution is the cheapest lever. Start at 1.5x rather than the
+   full 2x a retina panel reports, and step down once if frames stay slow. */
+let pixelRatio = Math.min(devicePixelRatio, 1.5);
+renderer.setPixelRatio(pixelRatio);
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
@@ -293,12 +297,12 @@ scene.add(die);
 const shellGeometry = new RoundedBoxGeometry(2 * S, 2 * S, 2 * S, 6, 0.09);
 /* Additive: the panes contribute their reflections and nothing else, so the
    walls read as glass instead of fogging the contents grey. */
-function shellMaterial(side, opacity) {
+function shellMaterial(side, opacity, iridescence) {
   return new THREE.MeshPhysicalMaterial({
     color: 0x0c1a1c,
     metalness: 0,
     roughness: 0.04,
-    iridescence: 0.7,
+    iridescence,
     iridescenceIOR: 1.34,
     clearcoat: 1,
     clearcoatRoughness: 0.02,
@@ -310,9 +314,9 @@ function shellMaterial(side, opacity) {
     envMapIntensity: 1.7,
   });
 }
-const shellFar = new THREE.Mesh(shellGeometry, shellMaterial(THREE.BackSide, 0.35));
+const shellFar = new THREE.Mesh(shellGeometry, shellMaterial(THREE.BackSide, 0.35, 0));
 shellFar.renderOrder = 0;
-const shellNear = new THREE.Mesh(shellGeometry, shellMaterial(THREE.FrontSide, 0.6));
+const shellNear = new THREE.Mesh(shellGeometry, shellMaterial(THREE.FrontSide, 0.6, 0.7));
 shellNear.renderOrder = 40;
 die.add(shellFar, shellNear);
 
@@ -332,9 +336,19 @@ die.add(node);
 
 /* ------------------------------------------------------------------ *
  * Sand surface — a fixed-topology lathe grid whose vertices are rewritten
- * each frame. No per-frame allocation.
+ * in place. No per-frame allocation, and no work at all unless the shape
+ * actually moved, which is what keeps the two resting hourglasses free.
  * ------------------------------------------------------------------ */
-const RAD = 44, WALL_ROWS = 30, CAP_ROWS = 8;
+const RAD = 40, WALL_ROWS = 26, CAP_ROWS = 8;
+
+// The ring angles never change, so the trig is table lookups, not 10k calls.
+const RING_COS = new Float32Array(RAD + 1);
+const RING_SIN = new Float32Array(RAD + 1);
+for (let c = 0; c <= RAD; c++) {
+  const a = (c / RAD) * Math.PI * 2;
+  RING_COS[c] = Math.cos(a);
+  RING_SIN[c] = Math.sin(a);
+}
 
 class SandSurface {
   constructor(material) {
@@ -342,9 +356,10 @@ class SandSurface {
     this.cols = RAD + 1;
     const n = this.rows * this.cols;
     this.position = new Float32Array(n * 3);
+    this.normal = new Float32Array(n * 3);
     this.geometry = new THREE.BufferGeometry();
     this.geometry.setAttribute('position', new THREE.BufferAttribute(this.position, 3));
-    this.geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    this.geometry.setAttribute('normal', new THREE.BufferAttribute(this.normal, 3));
 
     const index = [];
     for (let r = 0; r < this.rows - 1; r++) {
@@ -356,6 +371,10 @@ class SandSurface {
     this.geometry.setIndex(index);
     this.mesh = new THREE.Mesh(this.geometry, material);
     this.mesh.frustumCulled = false;
+
+    this.meridianR = new Float32Array(this.rows);
+    this.meridianY = new Float32Array(this.rows);
+    this.shape = [NaN, NaN, NaN, NaN, NaN];
   }
 
   /**
@@ -366,30 +385,50 @@ class SandSurface {
    * @param {number} capPow 1 = straight cone (a heap), >1 = funnel (a crater)
    */
   update(sign, tFrom, tTo, cap, capPow) {
-    const p = this.position;
+    const was = this.shape;
+    if (was[0] === sign && was[4] === capPow &&
+        Math.abs(was[1] - tFrom) < 2e-4 &&
+        Math.abs(was[2] - tTo) < 2e-4 &&
+        Math.abs(was[3] - cap) < 2e-4) return;
+    was[0] = sign; was[1] = tFrom; was[2] = tTo; was[3] = cap; was[4] = capPow;
+
+    const mR = this.meridianR, mY = this.meridianY;
     const rimR = innerR(tTo);
-    let k = 0;
     for (let r = 0; r < this.rows; r++) {
-      let radius, t;
+      let t;
       if (r < WALL_ROWS) {
-        const u = r / (WALL_ROWS - 1);
-        t = tFrom + (tTo - tFrom) * u;
-        radius = innerR(t);
+        t = tFrom + (tTo - tFrom) * (r / (WALL_ROWS - 1));
+        mR[r] = innerR(t);
       } else {
         const v = (r - WALL_ROWS + 1) / CAP_ROWS;
         t = tTo - cap * Math.pow(v, capPow);
-        radius = rimR * (1 - v);
+        mR[r] = rimR * (1 - v);
       }
-      const y = sign * t * L;
+      mY[r] = sign * t * L;
+    }
+
+    /* Normals analytically instead of computeVertexNormals(): on a surface of
+       revolution the meridian tangent (dR, dY) gives the normal (dY, -dR), and
+       that sign convention already matches the index winding above. O(rows)
+       instead of a cross product per triangle. */
+    const p = this.position, nrm = this.normal, last = this.rows - 1;
+    let k = 0;
+    for (let r = 0; r <= last; r++) {
+      const a = r > 0 ? r - 1 : 0, b = r < last ? r + 1 : last;
+      const dR = mR[b] - mR[a], dY = mY[b] - mY[a];
+      const len = Math.sqrt(dR * dR + dY * dY);
+      const nr = len > 1e-9 ? dY / len : 1;
+      const ny = len > 1e-9 ? -dR / len : 0;
+      const radius = mR[r], y = mY[r];
       for (let c = 0; c <= RAD; c++) {
-        const a = (c / RAD) * Math.PI * 2;
-        p[k++] = Math.cos(a) * radius;
-        p[k++] = y;
-        p[k++] = Math.sin(a) * radius;
+        const cos = RING_COS[c], sin = RING_SIN[c];
+        p[k] = cos * radius; p[k + 1] = y; p[k + 2] = sin * radius;
+        nrm[k] = cos * nr; nrm[k + 1] = ny; nrm[k + 2] = sin * nr;
+        k += 3;
       }
     }
     this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.computeVertexNormals();
+    this.geometry.attributes.normal.needsUpdate = true;
   }
 }
 
@@ -439,7 +478,7 @@ class Hourglass {
 
     // glass envelope: one closed lathe from -L to +L
     const pts = [];
-    const N = 160;
+    const N = 112;
     for (let i = 0; i <= N; i++) {
       const t = -1 + (2 * i) / N;
       pts.push(new THREE.Vector2(Math.max(profileR(Math.abs(t)), 0.0005), t * L));
@@ -457,7 +496,7 @@ class Hourglass {
       depthWrite: false,
       envMapIntensity: 1.6,
     });
-    const envelope = new THREE.Mesh(new THREE.LatheGeometry(pts, 64), this.glassMat);
+    const envelope = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), this.glassMat);
     envelope.renderOrder = 10;
     this.group.add(envelope);
 
@@ -553,8 +592,9 @@ class Hourglass {
       this.stream.scale.set(1, Math.abs(span), 1);
     }
 
-    this.grainMat.opacity = run ? 0.85 * flowing : 0;
+    this.grains.visible = run;
     if (run) {
+      this.grainMat.opacity = 0.85 * flowing;
       const p = this.grainGeo.attributes.position.array;
       const drop = lowerSurface;
       for (let i = 0; i < GRAINS; i++) {
@@ -727,16 +767,43 @@ addEventListener('resize', () => {
 const clock = new THREE.Clock();
 let hudAt = 0;
 
+/* Cap at 60fps: a 120Hz panel would otherwise ask for twice the frames for an
+   animation that gains nothing from them. The threshold sits well below 16.7ms
+   so a jittery 60Hz display never trips it and drops to 30. */
+const FRAME = 1 / 70;
+let pending = 0;
+
+// One-way quality step-down: sample two seconds of frames, and if a third of
+// them missed 24ms, drop to 1x and stop measuring.
+let sampled = 0, slow = 0;
+function watchFrames(dt) {
+  if (pixelRatio <= 1) return;
+  sampled++;
+  if (dt > 0.024) slow++;
+  if (sampled < 120) return;
+  if (slow > 40) {
+    pixelRatio = 1;
+    renderer.setPixelRatio(1);
+  }
+  sampled = 0;
+  slow = 0;
+}
+
 renderer.setAnimationLoop(() => {
-  const dt = Math.min(clock.getDelta(), 0.05);
+  pending += clock.getDelta();
+  if (pending < FRAME) return;
+  const dt = Math.min(pending, 0.05);
+  pending = 0;
   const now = clock.elapsedTime;
+  watchFrames(dt);
 
   stepRoll(dt);
   if (!roll.active && !reduceMotion) die.position.y = Math.sin(now * 0.9) * 0.025;
 
   for (const h of glasses) h.step(dt, die.quaternion);
 
-  const act = glasses[activeIndex()];
+  const live = activeIndex();
+  const act = glasses[live];
   if (!roll.active) {
     if (act.remaining <= 0.001 || act.gate < 0.4) roll.cooldown += dt;
     else roll.cooldown = 0;
@@ -745,8 +812,7 @@ renderer.setAnimationLoop(() => {
 
   if (now - hudAt > 0.1) {
     hudAt = now;
-    const i = activeIndex();
-    elAxis.textContent = AXIS_NAMES[i] + (glasses[i].gravity > 0 ? '−' : '+') + ' up';
+    elAxis.textContent = AXIS_NAMES[live] + (act.gravity > 0 ? '−' : '+') + ' up';
     const running = act.gate > 0.5 && act.remaining > 0.001;
     elFlow.textContent = running ? 'running' : roll.active ? 'tumbling' : 'settled';
     elFlow.className = running ? 'run' : '';
