@@ -1,6 +1,14 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { CAPACITY, L, clamp, innerR, levelAt, profileR, smoothstep } from './profile';
+import {
+  CAPACITY,
+  S,
+  SAND_INSET,
+  SAND_SPAN,
+  clamp,
+  drainLevel,
+  heapLevel,
+  smoothstep,
+} from './geometry';
 
 /**
  * The three-axis hourglass die, as a framework-free scene.
@@ -26,7 +34,6 @@ export interface DieOptions {
   onRollStart?: () => void;
 }
 
-const S = 1.0; // cube half-size
 const DOWN = new THREE.Vector3(0, -1, 0);
 const AXES = [
   new THREE.Vector3(1, 0, 0),
@@ -37,11 +44,17 @@ const AXES = [
 /** Order the die visits its faces, matching the order the accesses are listed. */
 const CYCLE: AxisIndex[] = [1, 0, 2];
 
-/** One colour per axis: X blue, Y green, Z violet. */
+/**
+ * One value per axis, from the mark's palette: Y light, X mid, Z deep.
+ *
+ * Not the mark's literal three hexes. Lighting compresses value differences —
+ * at the mark's spacing the three faces shade into one green — so the ends are
+ * pushed apart until the axes stay legible under shading.
+ */
 const SAND = [
-  { tone: 0x00c8ff, glow: 0x004659 },
-  { tone: 0x1fff9f, glow: 0x0b5937 },
-  { tone: 0xa855ff, glow: 0x3b1e59 },
+  { tone: 0x3fd0a2, glow: 0x0d4d3a },
+  { tone: 0xc4ffe9, glow: 0x1a7a5c },
+  { tone: 0x0e6349, glow: 0x062a20 },
 ] as const;
 
 const RAD = 40;
@@ -61,120 +74,86 @@ for (let c = 0; c <= RAD; c++) {
 const scratch = new THREE.Vector3();
 
 /**
- * A fixed-topology lathe grid whose vertices are rewritten in place. No
- * per-frame allocation, and no work at all unless the shape actually moved —
- * which is what keeps the two resting hourglasses free.
+ * The sand inside one pyramid: a square frustum between two levels on the axis.
+ *
+ * Every face keeps the same slope whatever the fill, so the normals are fixed at
+ * build time and only 36 positions move — no rebuild, no recompute, no garbage.
  */
-class SandSurface {
+class PyramidSand {
   readonly mesh: THREE.Mesh;
   private readonly geometry: THREE.BufferGeometry;
   private readonly position: Float32Array;
-  private readonly normal: Float32Array;
-  private readonly rows: number;
-  private readonly meridianR: Float32Array;
-  private readonly meridianY: Float32Array;
-  private readonly shape = [NaN, NaN, NaN, NaN, NaN];
+  private lo = NaN;
+  private hi = NaN;
 
   constructor(material: THREE.Material) {
-    this.rows = WALL_ROWS + CAP_ROWS;
-    const cols = RAD + 1;
-    const n = this.rows * cols;
-    this.position = new Float32Array(n * 3);
-    this.normal = new Float32Array(n * 3);
-    this.geometry = new THREE.BufferGeometry();
-    this.geometry.setAttribute('position', new THREE.BufferAttribute(this.position, 3));
-    this.geometry.setAttribute('normal', new THREE.BufferAttribute(this.normal, 3));
-
-    const index: number[] = [];
-    for (let r = 0; r < this.rows - 1; r++) {
-      for (let c = 0; c < RAD; c++) {
-        const a = r * cols + c;
-        const b = a + 1;
-        const d = a + cols;
-        const e = d + 1;
-        index.push(a, d, b, b, d, e);
+    this.position = new Float32Array(36 * 3);
+    const normal = new Float32Array(36 * 3);
+    const k = Math.SQRT1_2;
+    // four walls leaning in at 45°, then the two square caps
+    const faces: Array<[number, number, number]> = [
+      [k, -k, 0],
+      [-k, -k, 0],
+      [0, -k, k],
+      [0, -k, -k],
+      [0, 1, 0],
+      [0, -1, 0],
+    ];
+    for (let f = 0; f < 6; f++) {
+      for (let v = 0; v < 6; v++) {
+        const i = (f * 6 + v) * 3;
+        normal[i] = faces[f][0];
+        normal[i + 1] = faces[f][1];
+        normal[i + 2] = faces[f][2];
       }
     }
-    this.geometry.setIndex(index);
+    this.geometry = new THREE.BufferGeometry();
+    this.geometry.setAttribute('position', new THREE.BufferAttribute(this.position, 3));
+    this.geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
     this.mesh = new THREE.Mesh(this.geometry, material);
     this.mesh.frustumCulled = false;
-
-    this.meridianR = new Float32Array(this.rows);
-    this.meridianY = new Float32Array(this.rows);
   }
 
   /**
-   * @param sign   +1 for the bulb on +Y, -1 for the one on -Y
-   * @param tFrom  level where the sand body starts (0 = neck, 1 = far end)
-   * @param tTo    level of the free surface
-   * @param cap    how far the free surface pulls toward the neck
-   * @param capPow 1 = straight cone (a heap), >1 = funnel (a crater)
+   * @param sign +1 for the pyramid on +Y, -1 for the one on -Y
+   * @param lo   axial distance where the body starts (0 = the apex, at the neck)
+   * @param hi   axial distance of the free surface
    */
-  update(sign: number, tFrom: number, tTo: number, cap: number, capPow: number): void {
-    const was = this.shape;
-    if (
-      was[0] === sign &&
-      was[4] === capPow &&
-      Math.abs(was[1] - tFrom) < 2e-4 &&
-      Math.abs(was[2] - tTo) < 2e-4 &&
-      Math.abs(was[3] - cap) < 2e-4
-    ) {
-      return;
-    }
-    was[0] = sign;
-    was[1] = tFrom;
-    was[2] = tTo;
-    was[3] = cap;
-    was[4] = capPow;
+  update(sign: number, lo: number, hi: number): void {
+    const a = sign * lo;
+    const b = sign * hi;
+    if (this.lo === a && this.hi === b) return;
+    this.lo = a;
+    this.hi = b;
 
-    const mR = this.meridianR;
-    const mY = this.meridianY;
-    const rimR = innerR(tTo);
-    for (let r = 0; r < this.rows; r++) {
-      let t: number;
-      if (r < WALL_ROWS) {
-        t = tFrom + (tTo - tFrom) * (r / (WALL_ROWS - 1));
-        mR[r] = innerR(t);
-      } else {
-        const v = (r - WALL_ROWS + 1) / CAP_ROWS;
-        t = tTo - cap * Math.pow(v, capPow);
-        mR[r] = rimR * (1 - v);
-      }
-      mY[r] = sign * t * L;
-    }
-
-    /* Normals analytically instead of computeVertexNormals(): on a surface of
-       revolution the meridian tangent (dR, dY) gives the normal (dY, -dR), and
-       that sign convention already matches the index winding above. O(rows)
-       instead of a cross product per triangle. */
+    // half-width equals distance from the centre — that is what makes the six
+    // pyramids tile the cube exactly
+    const wLo = lo * SAND_INSET;
+    const wHi = hi * SAND_INSET;
     const p = this.position;
-    const nrm = this.normal;
-    const last = this.rows - 1;
-    let k = 0;
-    for (let r = 0; r <= last; r++) {
-      const a = r > 0 ? r - 1 : 0;
-      const b = r < last ? r + 1 : last;
-      const dR = mR[b] - mR[a];
-      const dY = mY[b] - mY[a];
-      const len = Math.sqrt(dR * dR + dY * dY);
-      const nr = len > 1e-9 ? dY / len : 1;
-      const ny = len > 1e-9 ? -dR / len : 0;
-      const radius = mR[r];
-      const y = mY[r];
-      for (let c = 0; c <= RAD; c++) {
-        const cos = RING_COS[c];
-        const sin = RING_SIN[c];
-        p[k] = cos * radius;
-        p[k + 1] = y;
-        p[k + 2] = sin * radius;
-        nrm[k] = cos * nr;
-        nrm[k + 1] = ny;
-        nrm[k + 2] = sin * nr;
-        k += 3;
-      }
-    }
+    let i = 0;
+    const quad = (
+      x1: number, y1: number, z1: number,
+      x2: number, y2: number, z2: number,
+      x3: number, y3: number, z3: number,
+      x4: number, y4: number, z4: number,
+    ) => {
+      p[i++] = x1; p[i++] = y1; p[i++] = z1;
+      p[i++] = x2; p[i++] = y2; p[i++] = z2;
+      p[i++] = x3; p[i++] = y3; p[i++] = z3;
+      p[i++] = x1; p[i++] = y1; p[i++] = z1;
+      p[i++] = x3; p[i++] = y3; p[i++] = z3;
+      p[i++] = x4; p[i++] = y4; p[i++] = z4;
+    };
+    const w = sign > 0 ? 1 : -1; // keep the winding outward when the piece flips
+    quad(wLo, a, w * wLo, wHi, b, w * wHi, wHi, b, -w * wHi, wLo, a, -w * wLo);
+    quad(-wLo, a, -w * wLo, -wHi, b, -w * wHi, -wHi, b, w * wHi, -wLo, a, w * wLo);
+    quad(-w * wLo, a, wLo, -w * wHi, b, wHi, w * wHi, b, wHi, w * wLo, a, wLo);
+    quad(w * wLo, a, -wLo, w * wHi, b, -wHi, -w * wHi, b, -wHi, -w * wLo, a, -wLo);
+    quad(-wHi, b, -w * wHi, wHi, b, -w * wHi, wHi, b, w * wHi, -wHi, b, w * wHi);
+    quad(-wLo, a, w * wLo, wLo, a, w * wLo, wLo, a, -w * wLo, -wLo, a, -w * wLo);
+
     this.geometry.attributes.position.needsUpdate = true;
-    this.geometry.attributes.normal.needsUpdate = true;
   }
 
   dispose(): void {
@@ -182,11 +161,26 @@ class SandSurface {
   }
 }
 
-/** One hourglass, authored along its own local Y and rotated onto its die axis. */
+/**
+ * Apex at the origin, square base of half-width `height` at that distance along
+ * +Y. The wide radius goes first: CylinderGeometry puts `radiusTop` at +height/2,
+ * so passing the zero second is what keeps the apex pointing at the cube's
+ * centre rather than out through the middle of a face.
+ */
+function pyramidGeometry(height: number): THREE.BufferGeometry {
+  const g = new THREE.CylinderGeometry(height * Math.SQRT2, 0, height, 4, 1);
+  g.rotateY(Math.PI / 4); // corners onto the cube's corners
+  g.translate(0, height / 2, 0);
+  return g;
+}
+
+/** One hourglass: two opposite pyramids, apex to apex, on its die axis. */
 class Hourglass {
   readonly group = new THREE.Group();
-  /** Fraction of the sand charge sitting in the +Y bulb. */
+  /** Fraction of the sand charge sitting in the +Y pyramid. */
   fillPlus = 1;
+  /** 0 until this axis is first rolled to: an hourglass arrives with its turn. */
+  charge = 0;
   /** +1 when local +Y points straight down. */
   gravity = -1;
   /** How much of the flow rate gravity allows right now. */
@@ -196,12 +190,12 @@ class Hourglass {
   private readonly toneIdle: THREE.Color;
   private readonly glow: THREE.Color;
   private readonly glowIdle: THREE.Color;
-  private readonly glassMat: THREE.MeshPhysicalMaterial;
+  private readonly glass: readonly THREE.MeshPhysicalMaterial[];
   private readonly sandMat: THREE.MeshStandardMaterial;
   private readonly streamMat: THREE.MeshBasicMaterial;
   private readonly grainMat: THREE.PointsMaterial;
-  private readonly plus: SandSurface;
-  private readonly minus: SandSurface;
+  private readonly plus: PyramidSand;
+  private readonly minus: PyramidSand;
   private readonly stream: THREE.Mesh;
   private readonly grains: THREE.Points;
   private readonly grainGeo: THREE.BufferGeometry;
@@ -221,31 +215,35 @@ class Hourglass {
     this.glow = new THREE.Color(SAND[axis].glow);
     this.glowIdle = this.glow.clone().multiplyScalar(0.4);
 
-    // glass envelope: one closed lathe from -L to +L
-    const pts: THREE.Vector2[] = [];
-    const N = 112;
-    for (let i = 0; i <= N; i++) {
-      const t = -1 + (2 * i) / N;
-      pts.push(new THREE.Vector2(Math.max(profileR(Math.abs(t)), 0.0005), t * L));
-    }
-    this.glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0x1b3a37,
-      metalness: 0,
-      roughness: 0.05,
-      transparent: true,
-      opacity: 0.55,
-      blending: THREE.AdditiveBlending,
-      clearcoat: 1,
-      clearcoatRoughness: 0.03,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      envMapIntensity: 1.6,
+    /* One glass material per piece, not one per hourglass: a shell only earns
+       its place over sand that isn't there. Over a full pyramid it adds nothing
+       but a bright rim along the edges, so each fades out as its own sand fills
+       it. Additive, because six stacked panes of ordinary transparency would fog
+       the core grey. Low clearcoat for the same reason as the fade — a hard
+       specular line reads as a border drawn around the volume. */
+    const glass = () =>
+      new THREE.MeshPhysicalMaterial({
+        color: 0x16302e,
+        metalness: 0,
+        roughness: 0.08,
+        transparent: true,
+        opacity: 0.26,
+        blending: THREE.AdditiveBlending,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.2,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        envMapIntensity: 1.1,
+      });
+    this.glass = [glass(), glass()]; // [+Y piece, -Y piece]
+    const shell = pyramidGeometry(S);
+    this.glass.forEach((mat, i) => {
+      const piece = new THREE.Mesh(shell, mat);
+      if (i === 1) piece.rotation.z = Math.PI;
+      piece.renderOrder = 10;
+      this.group.add(piece);
     });
-    const latheGeo = new THREE.LatheGeometry(pts, 48);
-    const envelope = new THREE.Mesh(latheGeo, this.glassMat);
-    envelope.renderOrder = 10;
-    this.group.add(envelope);
-    this.disposables.push(latheGeo, this.glassMat);
+    this.disposables.push(shell, ...this.glass);
 
     // Sand stays opaque: transparent materials are sorted per object, and every
     // object here shares the same centre, so anything translucent would flicker.
@@ -257,12 +255,12 @@ class Hourglass {
       emissive: this.glow.clone(),
       side: THREE.DoubleSide,
     });
-    this.plus = new SandSurface(this.sandMat);
-    this.minus = new SandSurface(this.sandMat);
+    this.plus = new PyramidSand(this.sandMat);
+    this.minus = new PyramidSand(this.sandMat);
     this.group.add(this.plus.mesh, this.minus.mesh);
     this.disposables.push(this.sandMat, this.plus, this.minus);
 
-    // the falling column
+    // the falling column, square to match the rest of the object
     const white = new THREE.Color(0xffffff);
     this.streamMat = new THREE.MeshBasicMaterial({
       color: this.tone.clone().lerp(white, 0.35),
@@ -270,7 +268,8 @@ class Hourglass {
       opacity: 0,
       depthWrite: false,
     });
-    const streamGeo = new THREE.CylinderGeometry(0.013, 0.024, 1, 12, 1, true);
+    const streamGeo = new THREE.CylinderGeometry(0.016, 0.026, 1, 4, 1, true);
+    streamGeo.rotateY(Math.PI / 4);
     this.stream = new THREE.Mesh(streamGeo, this.streamMat);
     this.stream.renderOrder = 20;
     this.group.add(this.stream);
@@ -299,13 +298,13 @@ class Hourglass {
     for (let i = 0; i < GRAINS; i++) {
       this.phase[i] = Math.random();
       const a = Math.random() * Math.PI * 2;
-      const r = Math.sqrt(Math.random()) * 0.022;
+      const r = Math.sqrt(Math.random()) * 0.02;
       this.jitter[i * 2] = Math.cos(a) * r;
       this.jitter[i * 2 + 1] = Math.sin(a) * r;
     }
   }
 
-  /** Sand still available in the upper bulb, 0..1. */
+  /** Sand still available in the upper pyramid, 0..1. */
   get remaining(): number {
     return this.gravity > 0 ? 1 - this.fillPlus : this.fillPlus;
   }
@@ -313,7 +312,7 @@ class Hourglass {
   step(dt: number, quaternion: THREE.Quaternion, drain: number): void {
     const pull = -scratch.copy(AXES[this.axis]).applyQuaternion(quaternion).y;
     // Lying flat, `pull` is zero give or take float noise; keeping the last real
-    // sign stops the resting sand from flipping between heap and crater shapes.
+    // sign stops the resting sand from flipping ends.
     if (Math.abs(pull) > 0.05) this.gravity = pull > 0 ? 1 : -1;
     this.gate = smoothstep(0.45, 0.9, Math.abs(pull));
 
@@ -330,22 +329,36 @@ class Hourglass {
     const inLower = this.gravity > 0 ? this.fillPlus : 1 - this.fillPlus;
     const inUpper = 1 - inLower;
 
-    this.drawBulb(lower > 0 ? this.minus : this.plus, -lower, inUpper, false);
-    const lowerSurface = this.drawBulb(lower > 0 ? this.plus : this.minus, lower, inLower, true);
+    /* Upper pyramid drains into its own apex — the funnel already points the
+       right way — so its sand is a pyramid growing from the neck. The lower one
+       stacks on its base, so its sand is a frustum climbing toward the neck. */
+    const held = CAPACITY * this.charge;
+    const upperTop = drainLevel(inUpper * held);
+    const lowerTop = heapLevel(inLower * held);
+    const upper = lower > 0 ? this.minus : this.plus;
+    const lowerSand = lower > 0 ? this.plus : this.minus;
+    upper.mesh.visible = inUpper * held > 0.002;
+    lowerSand.mesh.visible = inLower * held > 0.002;
+    if (upper.mesh.visible) upper.update(-lower, 0, upperTop);
+    if (lowerSand.mesh.visible) lowerSand.update(lower, SAND_SPAN, lowerTop);
 
     // idle axes keep their colour, just unlit — their sand is visibly parked,
     // not missing
     const active = this.gate > 0.5;
     this.sandMat.color.copy(active ? this.tone : this.toneIdle);
     this.sandMat.emissive.copy(active ? this.glow : this.glowIdle);
-    this.glassMat.opacity = active ? 0.55 : 0.34;
+    // each shell dims as its own pyramid fills, so a solid volume has no rim
+    const lit = active ? 0.26 : 0.15;
+    this.glass[0].opacity = lit * (1 - clamp(this.fillPlus * held, 0, 1));
+    this.glass[1].opacity = lit * (1 - clamp((1 - this.fillPlus) * held, 0, 1));
 
+    const drop = lower * lowerTop;
     const run = flowing > 0.02 && inUpper > 0.001;
     this.stream.visible = run;
     this.streamMat.opacity = run ? 0.7 * flowing : 0;
     if (run) {
-      this.stream.position.set(0, lowerSurface / 2, 0);
-      this.stream.scale.set(1, Math.abs(lowerSurface), 1);
+      this.stream.position.set(0, drop / 2, 0);
+      this.stream.scale.set(1, Math.abs(drop), 1);
     }
 
     this.grains.visible = run;
@@ -357,36 +370,11 @@ class Hourglass {
         const f = this.phase[i];
         const spread = 0.35 + f * 0.9;
         p[i * 3] = this.jitter[i * 2] * spread;
-        p[i * 3 + 1] = lowerSurface * f * f;
+        p[i * 3 + 1] = drop * f * f;
         p[i * 3 + 2] = this.jitter[i * 2 + 1] * spread;
       }
       this.grainGeo.attributes.position.needsUpdate = true;
     }
-  }
-
-  /** @returns local Y of the free surface at the centre */
-  private drawBulb(surface: SandSurface, sign: number, share: number, isLower: boolean): number {
-    const vol = clamp(share * CAPACITY, 0, 1);
-    if (vol < 0.004) {
-      surface.mesh.visible = false;
-      return sign * 0.02 * L;
-    }
-    surface.mesh.visible = true;
-
-    if (isLower) {
-      // sand rests against the far end and piles up toward the neck
-      const t = levelAt(1 - vol);
-      const heap = Math.min(innerR(t) / 0.8, 0.2, Math.max(t - 0.03, 0));
-      surface.update(sign, 1, t, heap, 1);
-      return sign * (t - heap) * L;
-    }
-    // sand sits on the neck; the funnel above the hole only forms as it drains,
-    // so a freshly turned bulb reads as full rather than as a cone
-    const t = levelAt(vol);
-    const dug = smoothstep(1, 0.55, share);
-    const crater = Math.min(innerR(t) * 0.85, Math.max(t - 0.02, 0)) * dug;
-    surface.update(sign, 0, t, crater, 1.9);
-    return sign * (t - crater) * L;
   }
 
   dispose(): void {
@@ -419,6 +407,9 @@ export class HourglassDie {
   private slow = 0;
 
   private orbit = Math.PI * 0.28;
+  private spinDir = 1;
+  /** Which end of each axis is the emptier one; -1 for +Y, +1 for -Y. */
+  private readonly emptier = [0, 0, 0];
   private pointerX = 0;
   private pointerY = 0;
   private aimX = 0;
@@ -475,7 +466,6 @@ export class HourglassDie {
     this.scene.add(rim);
 
     this.scene.add(this.die);
-    this.buildShell();
     this.grain = this.buildGrainTexture();
     this.glasses = [new Hourglass(0, this.grain), new Hourglass(1, this.grain), new Hourglass(2, this.grain)];
     for (const h of this.glasses) this.die.add(h.group);
@@ -487,8 +477,11 @@ export class HourglassDie {
     container.addEventListener('pointermove', this.handlePointer);
     container.addEventListener('pointerleave', this.handlePointerLeave);
 
-    // Start face-down on Y with every charge in its +end bulb, which the identity
-    // orientation puts on top — so the Y hourglass is already running.
+    /* Start with one hourglass only. Y is face-down with its charge in the +end
+       bulb, which the identity orientation puts on top, so it is already
+       running; the other two axes are empty glass until the die turns to them.
+       It opens on a single running glass rather than three full faces. */
+    this.glasses[1].charge = 1;
     this.render(0);
     this.onSettle?.(1);
   }
@@ -589,63 +582,6 @@ export class HourglassDie {
     return rt.texture;
   }
 
-  private buildShell(): void {
-    /* The shell is drawn as two passes — far faces first, near faces last — so
-       the contents sort correctly between them. `transmission` is deliberately
-       not used: three leaves transparent objects out of the transmission buffer,
-       which would erase the hourglasses inside. */
-    const geometry = new RoundedBoxGeometry(2 * S, 2 * S, 2 * S, 6, 0.09);
-    /* Additive: the panes contribute their reflections and nothing else, so the
-       walls read as glass instead of fogging the contents grey. */
-    const shellMaterial = (side: THREE.Side, opacity: number, iridescence: number) =>
-      new THREE.MeshPhysicalMaterial({
-        color: 0x0c1a1c,
-        metalness: 0,
-        roughness: 0.04,
-        iridescence,
-        iridescenceIOR: 1.34,
-        clearcoat: 1,
-        clearcoatRoughness: 0.02,
-        transparent: true,
-        opacity,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side,
-        envMapIntensity: 1.7,
-      });
-
-    const farMat = shellMaterial(THREE.BackSide, 0.35, 0);
-    const nearMat = shellMaterial(THREE.FrontSide, 0.6, 0.7);
-    const far = new THREE.Mesh(geometry, farMat);
-    far.renderOrder = 0;
-    const near = new THREE.Mesh(geometry, nearMat);
-    near.renderOrder = 40;
-    this.die.add(far, near);
-
-    const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.944, 1.944, 1.944));
-    const edgeMat = new THREE.LineBasicMaterial({
-      color: 0x58e6b8,
-      transparent: true,
-      opacity: 0.34,
-      depthWrite: false,
-    });
-    const edges = new THREE.LineSegments(edgeGeo, edgeMat);
-    edges.renderOrder = 41;
-    this.die.add(edges);
-
-    // Where the three necks cross. Also hides the only place the envelopes touch.
-    const nodeGeo = new THREE.IcosahedronGeometry(0.062, 2);
-    const nodeMat = new THREE.MeshPhysicalMaterial({
-      color: 0x101014,
-      metalness: 0.9,
-      roughness: 0.22,
-      emissive: 0x0d3a2e,
-    });
-    this.die.add(new THREE.Mesh(nodeGeo, nodeMat));
-
-    this.disposables.push(geometry, farMat, nearMat, edgeGeo, edgeMat, nodeGeo, nodeMat);
-  }
-
   private buildGrainTexture(): THREE.Texture {
     const c = document.createElement('canvas');
     c.width = 32;
@@ -675,7 +611,33 @@ export class HourglassDie {
     return best;
   }
 
+  /**
+   * Turn the shorter way toward the octant where the empty pyramids are.
+   *
+   * The speed never changes and the camera never stops — it just picks the
+   * direction that puts the see-through faces in front of the lens sooner, and
+   * so keeps them there longer.
+   */
+  private chooseSpin(): void {
+    const aim = new THREE.Vector3();
+    for (let i = 0; i < 3; i++) {
+      if (this.glasses[i].charge === 0) continue; // nothing to see past either way
+      scratch.copy(AXES[i]).applyQuaternion(this.die.quaternion);
+      aim.addScaledVector(scratch, this.glasses[i].fillPlus < 0.5 ? 1 : -1);
+    }
+    if (aim.x === 0 && aim.z === 0) return; // straight up or down: no azimuth to aim at
+    const target = Math.atan2(aim.x, aim.z);
+    let delta = (target - this.orbit) % (Math.PI * 2);
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    // dead ahead already: keep going rather than reversing for a hair
+    if (Math.abs(delta) > 0.15) this.spinDir = delta > 0 ? 1 : -1;
+  }
+
   private startRoll(axis: AxisIndex): void {
+    // An hourglass is charged the moment the die turns toward it, so the sand
+    // arrives under cover of the tumble rather than popping into a still frame.
+    this.glasses[axis].charge = 1;
     // Land with the fuller bulb on top, so the hourglass always has something to run.
     const sgn = this.glasses[axis].fillPlus >= 0.5 ? -1 : 1;
     /* Shortest way there: rotate from where that axis currently points to down,
@@ -701,6 +663,7 @@ export class HourglassDie {
       this.roll.active = false;
       this.die.quaternion.copy(this.roll.to);
       this.die.position.y = 0;
+      this.chooseSpin();
       this.onSettle?.(this.activeIndex());
     }
   }
@@ -754,10 +717,23 @@ export class HourglassDie {
 
     // Camera orbits the die rather than the die spinning: the face that landed
     // down has to stay down, or the metaphor breaks.
-    if (!this.reducedMotion) this.orbit += dt * 0.12;
+    /* The emptier end of an axis swaps when its glass passes half. That changes
+       which side is worth looking at, so re-evaluate the turn then as well as
+       after a landing. */
+    let swapped = false;
+    for (let i = 0; i < 3; i++) {
+      const end = this.glasses[i].fillPlus < 0.5 ? 1 : -1;
+      if (this.emptier[i] !== end) {
+        this.emptier[i] = end;
+        swapped = true;
+      }
+    }
+    if (swapped) this.chooseSpin();
+
+    if (!this.reducedMotion) this.orbit += dt * 0.12 * this.spinDir;
     this.pointerX += (this.aimX - this.pointerX) * Math.min(1, dt * 3);
     this.pointerY += (this.aimY - this.pointerY) * Math.min(1, dt * 3);
-    const radius = 8.2;
+    const radius = 8.6;
     this.camera.position.set(
       Math.sin(this.orbit) * radius + this.pointerX * 0.35,
       2.5 - this.pointerY * 0.3,
