@@ -5,10 +5,10 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { portalAtomUrl } from '../lib/intuition'
-import { periodToSeconds, isPeriodType } from '../lib/enforcers'
 import { SubscriptionDetail } from './SubscriptionDetail'
-import { Card, Btn, StatusBadge, Payee, type Status } from '../ui/components'
+import { Card, Btn, StatusBadge, Payee, STATUS, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 import { findChain, rpcUrl } from '../config/supported-chains'
 
@@ -20,25 +20,33 @@ function tintFor(addr: string): { tint: string; logo: string } {
   for (let i = 2; i < addr.length; i++) h = (h * 31 + addr.charCodeAt(i)) >>> 0
   return { tint: palette[h % palette.length], logo: addr.slice(2, 4).toUpperCase() }
 }
-function statusOf(s: StoredDelegation['meta']['status']): Status {
+function statusOf(s: StoredDelegation['meta']['status'], executed = false): Status {
+  if (executed) return 'executed'
   return s === 'signed' ? 'active' : s === 'revoked' ? 'revoked' : 'pending'
 }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
-function SubCard({ d, onOpen }: { d: StoredDelegation; onOpen: () => void }) {
-  const status = statusOf(d.meta.status)
+function SubCard({ d, onOpen, executedTx }: { d: StoredDelegation; onOpen: () => void; executedTx?: string }) {
+  const status = statusOf(d.meta.status, executedTx !== undefined)
   const stream = d.meta.scopeType === 'erc20Streaming'
   const payeeAddr = d.meta.recipient ?? d.delegation.delegate
   const { tint, logo } = tintFor(payeeAddr)
-  const dim = status === 'revoked'
+  const dim = status === 'revoked' || status === 'executed'
   return (
     <Card hover onClick={onOpen} className={`p-5 cursor-pointer relative ${dim ? 'opacity-70' : ''}`}>
-      <span className="absolute left-0 top-5 bottom-5 w-[3px] rounded-full" style={{ background: status === 'active' ? '#34D399' : status === 'pending' ? '#FBBF24' : '#FB7185' }} />
+      <span className="absolute left-0 top-5 bottom-5 w-[3px] rounded-full" style={{ background: STATUS[status].dot }} />
       <div className="flex items-start justify-between gap-3">
         <Payee logo={logo} tint={tint} name={d.meta.label} addr={short(payeeAddr)} />
         <div className="flex items-center gap-2 shrink-0">
           {stream && <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#22D3EE' }}><IconRepeat size={11} /> stream</span>}
-          <StatusBadge status={status} size="sm" />
+          {status === 'executed' && executedTx ? (
+            <a href={executedTx} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1" title="View execution tx">
+              <StatusBadge status={status} size="sm" />
+              <IconExt size={12} className="text-faint" />
+            </a>
+          ) : (
+            <StatusBadge status={status} size="sm" />
+          )}
         </div>
       </div>
       <div className="mt-5 flex items-end gap-2">
@@ -93,6 +101,22 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const [safeInfo, setSafeInfo] = useState<{ owners: string[]; threshold: number } | null>(null)
   const [subs, setSubs] = useState<StoredDelegation[]>(() => getDelegations())
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
+  // Limit orders are one-shot; once fired on-chain, show them as Executed not Active,
+  // with a link to the redemption tx. Keyed by delegationHash → explorer URL ('' = no link).
+  const [executed, setExecuted] = useState<Map<string, string>>(new Map())
+
+  useEffect(() => {
+    const orders = subs.filter((d) => d.meta.strategyKind === 'limitOrder' && d.meta.status === 'signed')
+    if (orders.length === 0) return
+    let cancelled = false
+    Promise.all(orders.map(async (d) => {
+      const ex = await getLimitOrderExecution(d.meta.chainId, d.meta.delegationHash, d.meta.createdAt)
+      return ex.executed ? ([d.meta.delegationHash.toLowerCase(), ex.txUrl ?? ''] as const) : null
+    }))
+      .then((hits) => { if (!cancelled) setExecuted(new Map(hits.filter((h): h is readonly [string, string] => h !== null))) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [subs])
 
   function refresh() {
     const next = getDelegations()
@@ -160,13 +184,14 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   }
 
   const active = subs.filter((s) => s.meta.status === 'signed')
-  // Monthly run-rate: normalise each active subscription's amount to a per-month
-  // figure from its period, so a daily/weekly/minutely cap still contributes.
-  const SECONDS_PER_MONTH = Number(periodToSeconds('monthly'))
+  // Total engaged: the plain sum of each active mandate's headline amount — the same
+  // figure shown on its card (a stream shows its per-period rate, everything else its
+  // amount). No per-period normalisation, so a limit order (period 'swap') or any
+  // non-recurring mandate is counted too.
   const committed = active.reduce((sum, s) => {
-    const amount = parseFloat((s.meta.amount ?? '0').replace(/,/g, ''))
-    if (!Number.isFinite(amount) || !isPeriodType(s.meta.period)) return sum
-    return sum + amount * (SECONDS_PER_MONTH / Number(periodToSeconds(s.meta.period)))
+    const shown = s.meta.scopeType === 'erc20Streaming' ? s.meta.ratePerPeriod : s.meta.amount
+    const amount = parseFloat((shown ?? '0').replace(/,/g, ''))
+    return Number.isFinite(amount) ? sum + amount : sum
   }, 0)
 
   return (
@@ -227,9 +252,9 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
       {/* Stats (no ETH-spent / gasless stat by design choice) */}
       <div className="mb-6">
         <Card className="p-4">
-          <div className="flex items-center gap-2 text-xs text-faint"><IconRepeat size={16} /> Committed / month</div>
+          <div className="flex items-center gap-2 text-xs text-faint"><IconRepeat size={16} /> Total engaged</div>
           <div className="mt-2 font-mono font-bold text-ink tnum" style={{ fontSize: 24 }}>${committed.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
-          <div className="text-xs text-dim mt-1">{active.length} active subscription{active.length === 1 ? '' : 's'}</div>
+          <div className="text-xs text-dim mt-1">{active.length} active mandate{active.length === 1 ? '' : 's'}</div>
         </Card>
       </div>
 
@@ -244,7 +269,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {subs.map((d) => (
-            <SubCard key={d.meta.delegationHash} d={d} onOpen={() => setSelected(d)} />
+            <SubCard key={d.meta.delegationHash} d={d} onOpen={() => setSelected(d)} executedTx={executed.get(d.meta.delegationHash.toLowerCase())} />
           ))}
         </div>
       )}

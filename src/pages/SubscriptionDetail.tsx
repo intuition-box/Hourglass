@@ -4,12 +4,13 @@ import { ipfsToHttp } from '../lib/subscriptionTerms'
 import { portalAtomUrl } from '../lib/intuition'
 import { buildRevokeTxs } from '../lib/revoke'
 import { updateDelegationStatus, removeDelegation, type StoredDelegation } from '../lib/storage'
+import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { Card, Btn, StatusBadge, Payee, Mono, CopyChip, type Status } from '../ui/components'
 import { IconX, IconStop, IconCube, IconExt, IconLock, IconCal, IconRepeat } from '../ui/icons'
 import { chainName } from '../config/supported-chains'
 
-const statusOf = (s: StoredDelegation['meta']['status']): Status =>
-  s === 'signed' ? 'active' : s === 'revoked' ? 'revoked' : 'pending'
+const statusOf = (s: StoredDelegation['meta']['status'], executed = false): Status =>
+  executed ? 'executed' : s === 'signed' ? 'active' : s === 'revoked' ? 'revoked' : 'pending'
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const tintFor = (addr: string) => {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
@@ -40,7 +41,16 @@ export function SubscriptionDetail({
 }) {
   const { sdk, safe } = useSafeAppsSDK()
   const [revoking, setRevoking] = useState(false)
-  const status = statusOf(d.meta.status)
+  // A one-shot limit order that has already fired reads as executed on-chain, with a
+  // link to its redemption tx.
+  const [execution, setExecution] = useState<{ executed: boolean; txUrl?: string }>({ executed: false })
+  useEffect(() => {
+    if (d.meta.strategyKind !== 'limitOrder' || d.meta.status !== 'signed') return
+    let cancelled = false
+    getLimitOrderExecution(d.meta.chainId, d.meta.delegationHash, d.meta.createdAt).then((r) => { if (!cancelled) setExecution(r) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [d.meta.strategyKind, d.meta.status, d.meta.chainId, d.meta.delegationHash, d.meta.createdAt])
+  const status = statusOf(d.meta.status, execution.executed)
   const stream = d.meta.scopeType === 'erc20Streaming'
   const payeeAddr = d.meta.recipient ?? d.delegation.delegate
   const httpUri =
@@ -200,7 +210,12 @@ export function SubscriptionDetail({
         <div className="mt-5 flex items-center gap-2">
           <Mono className="text-[11px] text-faint mr-auto">{short(d.meta.delegationHash)}</Mono>
           <CopyChip value={JSON.stringify(d, null, 2)} label="Copy JSON" />
-          {d.meta.status === 'signed' && (
+          {execution.executed && execution.txUrl && (
+            <a href={execution.txUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-dim hover:text-ink" title="View execution tx">
+              <IconExt size={13} /> View tx
+            </a>
+          )}
+          {d.meta.status === 'signed' && !execution.executed && (
             <Btn kind="danger" size="sm" icon={<IconStop size={14} />} onClick={handleRevoke} disabled={revoking}>
               {revoking ? 'Revoking…' : 'Revoke'}
             </Btn>

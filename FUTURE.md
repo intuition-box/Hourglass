@@ -2,6 +2,50 @@
 
 Deferred ideas captured during tasks (per workflow rules — scope discipline).
 
+- **[COST] Who pays the agent's compute.** Per `docs/AGENT_EXECUTION_PLAN.md` the agent
+  runs as a 0G Tapp instance, billed per minute. For the demo Hourglass pays it from its
+  own 0G deposit — the same call as the shared Uniswap key.
+
+  The intended end state is the operator paying for their own order's compute, but that
+  is not a config change: 0G bills by deposit into a contract **on 0G Chain**, settled in
+  EIP-712 vouchers signed by the TEE key. The operator's Safe is on Base, so charging
+  them directly means a second chain and a second token on top of the ETH gas top-up
+  they already do. Options when it matters: operator deposits on 0G directly (worst UX,
+  simplest to build), Hourglass fronts it and bills back on Base, or the cost comes out
+  of the swap. Undecided — revisit with the two-chain note in
+  `docs/0G-INTEGRATION-MAP.md §4.3`.
+
+- **[COST] Agent gas residue has no return path to the Safe.** Per ADR 0007 the agent
+  wallet is funded from the Safe after the mandate is signed, and pays its own gas for
+  `redeemDelegations`. Whatever it does not spend stays on an address whose key only
+  the agent runtime holds — `ModuleTransfer` sweeps the DeleGator module, not the agent
+  wallet. Under limit-order-only scope a mandate fires once, so the leftover is the
+  top-up minus one redeem; a mandate whose trigger price never hits strands the whole
+  amount indefinitely.
+
+  **Accepted as a known loss for v1** (user decision, 2026-07-25) — bounded by the
+  top-up size, so keep the funding sized to one redeem plus a modest margin.
+
+  **What closing it needs:** a sweep instruction in the runner returning the balance to
+  the Safe, on three triggers — after a successful fill, after `disableDelegation`, and
+  on abandonment. The third is the hard one: an unfilled limit order emits no on-chain
+  event saying "this is over", so abandonment needs either an operator action in the
+  app or an expiry (a `TimestampEnforcer` on the mandate would give the runner a
+  deadline to sweep against). Revisit alongside the DCA rail, which turns this from a
+  one-shot leftover into a recurring top-up/refill problem.
+
+- **[DCA] The DCA rail needs the same Permit2 setup the limit order got.** Proven on
+  the limit order: the Uniswap Universal Router 2.0 pulls the funding token through
+  Permit2 (verified — `check_approval` always returns the Permit2 spender on Base, no
+  legacy toggle exposed; the `/swap` calldata is a bare `V3_SWAP_EXACT_IN` with no inline
+  `PERMIT2_PERMIT`). So `run-dca.ts`'s approve+swap redeem hits `AllowanceExpired` too
+  unless the Safe has a standing Permit2 allowance for the router. The fix mirrors the
+  limit order: a one-time "Enable trading" setup (`src/lib/permit2.ts`) + drop the
+  in-mandate approve, redeeming the swap alone. Until then the DCA docs are stale:
+  `getting-started.mdx` (line ~59, "approve directly to the router, not Permit2") and
+  `references/execution-dca.md` ("approve + swap in one atomic call") describe the
+  pre-Permit2 flow. Deferred with the rest of DCA.
+
 - **Multi-token redeem stats.** `StatsRow` / `sumDisplay` on the Charge page sum
   claimable/claimed across token groups under a single hardcoded "USDC" label.
   Correct for the current USDC-centric POC (amounts are grouped per token with

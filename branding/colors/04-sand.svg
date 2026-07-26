@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" role="img" aria-label="Hourglass">
+  <!-- Six triangles around the centre; every opposite pair is a bowtie. -->
+  <path d="M128 128L128.0 28.0L214.6 78.0ZM128 128L128.0 228.0L41.4 178.0Z" fill="#f4e3c1"/>
+  <path d="M128 128L214.6 78.0L214.6 178.0ZM128 128L41.4 178.0L41.4 78.0Z" fill="#d9b382"/>
+  <path d="M128 128L214.6 178.0L128.0 228.0ZM128 128L41.4 78.0L128.0 28.0Z" fill="#8a6a45"/>
+</svg>

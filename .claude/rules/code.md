@@ -9,7 +9,7 @@ The codebase has three layers. Mixing them is a defect.
 | Layer | Responsibility | Examples |
 |---|---|---|
 | **Domain / contracts** | On-chain state and invariants. Pure business logic. | `contracts/src/*.sol` |
-| **Services** | Off-chain logic that talks to chain, the delegation toolkit, the 1Shot relayer, IPFS. No UI concerns. | `packages/core/src/*.ts` |
+| **Services** | Off-chain logic that talks to chain, the delegation toolkit, IPFS. No UI concerns. | `packages/core/src/*.ts` |
 | **Presentation** | React components, hooks, pages. No business logic, no direct chain calls. | `packages/web/src/*.tsx` |
 
 Rules:

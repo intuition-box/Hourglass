@@ -222,8 +222,10 @@ export default function Strategy() {
         <div className="space-y-5">
           <Block title="Agent">
             <p className="text-xs text-dim -mt-1 leading-relaxed">
-              You run the agent, not us — set it up with the Hourglass skill (it creates a wallet, funds a little gas, and
-              redeems this mandate). Paste its address here; everything below stays locked until you do.
+              You run the agent, not us — set it up with the{' '}
+              <a href="https://github.com/intuition-box/Hourglass/tree/main/skills/hourglass-agent" target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2" style={{ color: '#34D399' }}>Hourglass skill</a>
+              {' '}(it creates a wallet, funds a little gas, and redeems this mandate). Paste its address here; everything
+              below stays locked until you do.
             </p>
             <Field label="Agent address" required missing={agent !== '' && !agentValid}>
               <input

@@ -11,4 +11,9 @@ printf 'window.__OG__={network:"%s"}\n' "${INTUITION_NETWORK:-testnet}" > /srv/s
 
 ( cd /publisher && bun server/intuition-publisher.ts; echo "[entrypoint] publisher exited ($?)" ) &
 
+# The 0G agent service, same deal: if its keys are missing it exits and the rest of
+# the container keeps serving — the Limit order tab just falls back to the self-run
+# agent path. It runs from /agent because it spawns the runner in skills/.
+( cd /agent && bun server/og-agent-service.ts; echo "[entrypoint] agent service exited ($?)" ) &
+
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile

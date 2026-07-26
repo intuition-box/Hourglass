@@ -9,7 +9,7 @@ Each rule file is self-contained. Load only those relevant to the current task â
 | `ui.md` | Typography-driven design, dark-first, anti-template rules | Any task touching `packages/web/` |
 | `security.md` | Threat model checklist, when to invoke Trail of Bits | Any contract change or value-handling code |
 | `workflow.md` | Git hygiene, scope discipline, communication style, change verification | Every task â€” load at start and at end |
-| `metamask-delegation.md` | ERC-7710/7702 delegation, the `erc20PeriodTransfer` caveat, Smart Accounts Kit, the 1Shot relayer | Any work touching the MetaMask delegation surface (`packages/core`, `packages/web`, `scripts/`) |
+| `metamask-delegation.md` | ERC-7710/7702 delegation, the `erc20PeriodTransfer` caveat, Smart Accounts Kit | Any work touching the MetaMask delegation surface (`packages/core`, `packages/web`, `scripts/`) |
 
 ## Update protocol
 

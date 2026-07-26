@@ -133,8 +133,7 @@ Component A (signing) has no such dependency and can ship first.
 ## Risks / notes
 
 - **Gas vs fee.** $1 must beat the collector's share of one batched sweep. Fine on
-  Base L2; size batches accordingly. Track on-chain (USDC received) rather than
-  trusting any relayer status.
+  Base L2; size batches accordingly. Track on-chain (USDC received).
 - **Opt-in = voluntary revenue.** Non-participants pay nothing. Deliberate.
 - **`redeemDelegations` multi-tuple in one call** (the batched sweep) is the standard
   way to redeem multiple delegations atomically and is structurally supported by the

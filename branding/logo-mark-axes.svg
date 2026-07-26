@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" role="img" aria-label="Hourglass">
+  <!--
+    The same hexagon, split the way the cube splits: six triangles around the
+    centre, and every opposite pair is a bowtie. Three bowties, three axes —
+    one colour each, the way the die runs them.
+  -->
+  <path d="M128 128L128.0 28.0L214.6 78.0ZM128 128L128.0 228.0L41.4 178.0Z" fill="#1fff9f" opacity="0.92"/>
+  <path d="M128 128L214.6 78.0L214.6 178.0ZM128 128L41.4 178.0L41.4 78.0Z" fill="#00c8ff" opacity="0.92"/>
+  <path d="M128 128L214.6 178.0L128.0 228.0ZM128 128L41.4 78.0L128.0 28.0Z" fill="#a855ff" opacity="0.92"/>
+  <path d="M128.0 28.0L214.6 78.0L214.6 178.0L128.0 228.0L41.4 178.0L41.4 78.0Z" stroke="#0a0a0b" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M128.0 28.0L214.6 78.0L214.6 178.0L128.0 228.0L41.4 178.0L41.4 78.0Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round" opacity="0.5"/>
+</svg>

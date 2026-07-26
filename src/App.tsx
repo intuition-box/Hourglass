@@ -19,7 +19,9 @@ const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[
   { key: 'create', label: 'Create', icon: IconPlus },
   { key: 'redeem', label: 'Charge', icon: IconBolt },
   { key: 'yield', label: 'Yield', icon: IconTrend },
-  { key: 'strategy', label: 'Strategy', icon: IconRepeat },
+  // Strategy (DCA) tab hidden from nav for the demo — the rail isn't functional yet
+  // (needs the Permit2 setup the limit order got). Code kept; re-add when it works.
+  // { key: 'strategy', label: 'Strategy', icon: IconRepeat },
   { key: 'limit', label: 'Limit order', icon: IconStop },
   { key: 'aqua', label: 'Aqua', icon: IconCube },
 ]

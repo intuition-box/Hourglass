@@ -4,3 +4,5 @@ dist
 test/deployment.json
 .vercel
 bun.lock
+/hourglass-agent-ready
+.agent-runs

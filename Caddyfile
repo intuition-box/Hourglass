@@ -37,6 +37,18 @@
 		reverse_proxy localhost:8787
 	}
 
+	# 0G agent service: same arrangement, another bun process in this container.
+	# /agent/provision -> the service's /provision, and so on. Same-origin, so no
+	# CORS and no second domain to configure. Provisioning is slow — the model
+	# creates its wallet in a shell — so give it room past Caddy's default.
+	handle_path /agent/* {
+		reverse_proxy localhost:8789 {
+			transport http {
+				response_header_timeout 10m
+			}
+		}
+	}
+
 	# The Vite Safe App SPA. handle_path strips the /safe-app prefix; the app was
 	# built with base=/safe-app/ so its asset URLs resolve correctly. Unknown
 	# sub-paths fall back to the SPA's index.html for client-side routing.

@@ -5,13 +5,16 @@ gas is the only value it ever holds.
 
 ## 1. Dependencies
 
+The runners are a self-contained package in this skill's `scripts/` directory
+(`package.json` pins viem + @metamask/smart-accounts-kit). Install once:
+
 ```bash
-bun add viem @metamask/smart-accounts-kit
-# or: npm install viem @metamask/smart-accounts-kit
+cd scripts && bun install
+# or: cd scripts && npm install
 ```
 
-Also install the Uniswap **swap-integration** skill (it builds the swap calldata
-the agent redeems).
+The swap calldata is built by calling the Uniswap Trading API directly (inlined in the
+runners) — no extra skill needed.
 
 ### Get a Uniswap Trading API key
 

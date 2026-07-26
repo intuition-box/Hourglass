@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none" role="img" aria-label="Hourglass">
+  <!--
+    The die reduced to its silhouette. A cube seen down its (1,1,1) diagonal
+    projects to a regular hexagon, and the hourglass inside it reads as a bowtie
+    with the neck at the cube's centre — which is exactly where the three necks
+    meet in the object.
+
+    Colours are literal, not currentColor: an SVG loaded through <img> has no
+    parent to inherit from and would fall back to black.
+  -->
+  <path d="M128 28 214.6 78 214.6 178 128 228 41.4 178 41.4 78Z"
+        stroke="#58e6b8" stroke-width="9" stroke-linejoin="round" opacity="0.5"/>
+  <path d="M84 70 172 70 128 128 172 186 84 186 128 128Z" fill="#58e6b8"/>
+</svg>

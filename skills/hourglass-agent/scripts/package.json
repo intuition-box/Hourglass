@@ -1,0 +1,14 @@
+{
+  "name": "hourglass-agent-runner",
+  "private": true,
+  "type": "module",
+  "description": "Self-contained Hourglass agent runners (limit order + DCA). Install, then run a runner with the operator's instruction JSON.",
+  "scripts": {
+    "limit-order": "bun run-limit-order.ts",
+    "dca": "bun run-dca.ts"
+  },
+  "dependencies": {
+    "@metamask/smart-accounts-kit": "^0.3.0",
+    "viem": "^2.55.8"
+  }
+}

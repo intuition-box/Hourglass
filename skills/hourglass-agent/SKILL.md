@@ -35,7 +35,10 @@ App — so the flow hands back and forth once. The whole loop, from the operator
    (steps 1–3 below). You fund that address with a little gas.
 2. **You open the Safe App**, paste the agent address, create the delegation (Strategy
    or Limit order tab), and sign it — a multisig Safe needs its threshold of signers.
-   The publisher backend then publishes the finalized mandate on Intuition.
+   The publisher backend then publishes the finalized mandate on Intuition. For a limit
+   order, the tab first asks you to **Enable trading** for the funding token — a one-time
+   Permit2 setup (one batched Safe tx) the router needs to pull the token; without it the
+   agent's swap reverts with `AllowanceExpired`. Signed once per token, reused forever.
 3. **You come back to this skill** with the recap JSON the tab emitted. The agent
    discovers the mandate on Intuition and executes it (steps 5–6).
 
@@ -47,38 +50,47 @@ discovery — the mandate lives on Intuition, not in this session.
 
 ## Quick start checklist
 
-Do these in order. Steps 1–3 are one-time setup; steps 5–6 repeat on the mandate's
-cadence.
+You (the agent) run every step here yourself, via the shell — steps 4 and the funding
+in 3 are the only human actions. Everything the runner needs is bundled in `scripts/`.
 
-1. **Install dependencies.** `bun add viem @metamask/smart-accounts-kit`. Install
-   the Uniswap **swap-integration** skill (it builds the swap calldata). Get a Uniswap
-   Trading API key from the developer hub (**https://hub.uniswap.org/**) — the full
-   walkthrough is in `references/setup.md`.
-2. **Create the agent wallet.** Generate a fresh keypair and record the address.
-   `cast wallet new` (foundry), or the viem snippet in `references/setup.md`. Keep
-   the private key secret; it only ever pays gas.
-3. **Fund the wallet with a little ETH** on the mandate's chain (Base or Ethereum
-   mainnet). A few dollars of ETH covers many redeems. Ask the human operator to
-   send it — the agent does not self-fund. Verify the balance before proceeding.
-4. **Hand the address to the Safe operator.** They paste it into Hourglass as the
-   *Agent address* (Strategy tab for a DCA, Limit order tab for a limit order) and sign
-   the mandate — a multisig Safe needs its signing threshold. Nothing below works until
-   the mandate is finalized and published. They then hand you back the **recap JSON**
-   the tab emits (it names the mandate by `delegationHash`).
-5. **Discover the mandate.** Read the delegations the Safe addressed to your agent
-   from the Intuition graph, and match the one in the recap by `delegationHash`. See
-   `references/discovery.md`. If none appear, the mandate isn't published yet (threshold
-   not reached, or indexing lag) — wait and retry.
-6. **Execute the buy.** Build the swap (Uniswap Trading API, CLASSIC routing + legacy
-   approval) and redeem it — approve + swap in one atomic transaction. For a **DCA**,
-   run this on the mandate's cadence (a cron/scheduler you own; this skill does not run
-   a scheduler) — see `references/execution-dca.md`. For a **limit order**, poll the
-   price and fire once when the dip hits — see `references/execution-limit-order.md`.
+1. **Install dependencies.** The runners are a self-contained package in `scripts/`:
+   ```bash
+   cd scripts && bun install    # or: npm install
+   ```
+   You also need a **Uniswap Trading API key** (`UNISWAP_API_KEY`) — the operator gives
+   it to you, or get one from **https://hub.uniswap.org/** (walkthrough in
+   `references/setup.md`). It is agent-side only; never ship it to a browser.
+2. **Create the agent wallet.** Generate a fresh keypair, write the private key to a
+   local `.env` (`AGENT_PRIVATE_KEY=…`, never commit it), and record the **address**.
+   `cast wallet new`, or the viem snippet in `references/setup.md`.
+3. **Report the address and ask the operator to fund it.** Print the agent address and
+   ask the human to send a little ETH for gas on the mandate's chain (Base / Ethereum
+   mainnet) — the agent does not self-fund. Verify the balance is non-zero before running.
+4. **Operator creates the mandate (their only app step).** They paste your address into
+   Hourglass (Strategy tab for a DCA, Limit order tab for a limit order). For a limit
+   order they first click **Enable trading** (a one-time Permit2 setup, one Safe tx),
+   then sign the mandate — a multisig Safe needs its signing threshold. Once finalized it
+   publishes to Intuition. They hand you back the **recap JSON** (names the mandate by
+   `delegationHash`). Save it as `scripts/instruction.json`.
+5. **Run the bundled runner — it discovers and executes autonomously.** From `scripts/`,
+   with the env set (`AGENT_PRIVATE_KEY`, `UNISWAP_API_KEY`, `INTUITION_NETWORK=mainnet`,
+   optional `RPC_URL`):
+   ```bash
+   bun run-limit-order.ts instruction.json      # limit order: polls, fills once at the dip
+   bun run-dca.ts instruction.json              # DCA: buys once per invocation
+   ```
+   The runner matches the mandate by `delegationHash`, polls the Uniswap quote against
+   the enforced `minReceived`, and redeems the swap as the Safe when the trigger hits —
+   then exits (a limit order fires once; `limitedCalls(1)`). If it prints *"not found on
+   Intuition yet"*, the mandate isn't published (threshold/indexing lag) — wait and retry.
+   If a fill reverts with `AllowanceExpired`, the operator skipped the Permit2 **Enable
+   trading** step — ask them to run it. Details: `references/execution-limit-order.md`
+   (limit order) and `references/execution-dca.md` (DCA).
 
-Ready-to-run scripts that do steps 5–6 are bundled: `scripts/run-dca.ts` for a DCA and
-`scripts/run-limit-order.ts` for a limit order. Each takes the operator's instruction
-JSON (the recap copied from the Strategy or Limit order tab); read the matching
-execution reference for how to configure and invoke it.
+To keep watching after a session ends, keep the runner process alive or wire it to a
+scheduler you own (cron, a runtime wake) — the skill does not run one. Re-running the
+runner with the same `instruction.json` resumes from discovery; the mandate lives on
+Intuition, not in this session.
 
 ## What you need from the operator / environment
 

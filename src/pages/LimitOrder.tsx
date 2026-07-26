@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, parseUnits, type Address, type Hex } from 'viem'
+import { createPublicClient, http, isAddress, parseUnits, parseEther, type Address, type Hex } from 'viem'
 import { readErc20Meta } from '../lib/erc20'
 import { useSafeTokens } from '../hooks/useSafeTokens'
 import { useWhitelistedTokens } from '../hooks/useWhitelistedTokens'
@@ -17,11 +17,18 @@ import { checkPermit2, buildPermit2Setup } from '../lib/permit2'
 import { findChain, rpcUrl } from '../config/supported-chains'
 import { saveDelegation } from '../lib/storage'
 import { Card, Btn, Mono, CopyChip } from '../ui/components'
+import { useAgentRun } from '../hooks/useAgentRun'
+import { finalizePending } from '../hooks/useFinalizePending'
+import type { AgentInstruction } from '../lib/agent-service'
 import { Block, Field, Segmented, PreviewRow } from '../ui/form'
 import { IconLock, IconCheck, IconAlert } from '../ui/icons'
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
+
+/** One redeem costs ~440k gas on Base; this covers it with room, and it is the loss
+ *  ceiling if the order never fills (ADR 0007 — the residue has no return path yet). */
+const AGENT_GAS_ETH = '0.0006'
 
 type SignStep = 'idle' | 'preparing' | 'signing' | 'done'
 
@@ -45,8 +52,12 @@ export default function LimitOrder() {
   const [error, setError] = useState<string | null>(null)
   const [recap, setRecap] = useState<string | null>(null)
   // Permit2 setup: null = unknown/checking, true = the Safe can trade, false = needs setup.
+  const [agentMode, setAgentMode] = useState<'self' | 'hosted'>('self')
+  const agentSvc = useAgentRun()
   const [permit2Ready, setPermit2Ready] = useState<boolean | null>(null)
   const [permit2Busy, setPermit2Busy] = useState(false)
+  const [fundingAgent, setFundingAgent] = useState(false)
+  const [publishing, setPublishing] = useState(false)
 
   const useCustom = tokenMode === 'custom'
   const fundingAddress = useCustom ? customToken : (selectedToken?.address ?? '')
@@ -89,7 +100,9 @@ export default function LimitOrder() {
 
   const fundingValid = isAddress(fundingAddress)
   const targetValid = isAddress(targetToken)
-  const agentValid = isAddress(agent)
+  // In hosted mode the address is the one the service provisioned, not a typed field.
+  const effectiveAgent = agentMode === 'hosted' ? (agentSvc.agentAddress ?? '') : agent
+  const agentValid = isAddress(effectiveAgent)
   const router = UNIVERSAL_ROUTER[safe.chainId]
   const canSign = Boolean(fundingValid && targetValid && spendRaw > 0n && minReceivedRaw > 0n && agentValid && router && step === 'idle')
 
@@ -128,6 +141,41 @@ export default function LimitOrder() {
     }
   }
 
+
+  /** Gas for the agent, as its own Safe transaction — never bundled with the Permit2
+   *  setup: two unrelated consents in one approval is not something a signer can read. */
+  async function handleFundAgent() {
+    setError(null)
+    if (!agentValid) return
+    setFundingAgent(true)
+    try {
+      await sdk.txs.send({ txs: [{ to: effectiveAgent, value: parseEther(AGENT_GAS_ETH).toString(), data: '0x' }] })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fund the agent')
+    } finally {
+      setFundingAgent(false)
+    }
+  }
+
+  async function handleStartAgent() {
+    setError(null)
+    if (!recap) return
+    setPublishing(true)
+    try {
+      // Publish before starting. The agent discovers its mandate on Intuition, and
+      // until this runs the mandate is signed but unindexed — the run would exit on
+      // "not found on Intuition yet" and read as a failure. This is the same pass the
+      // app does on open; doing it here means the operator never has to reload.
+      await finalizePending(safe.chainId, safe.safeAddress as Address)
+    } catch {
+      // Already-published is the common case and it is a no-op; a real failure
+      // surfaces as the agent not finding the mandate, which says more than we could.
+    } finally {
+      setPublishing(false)
+    }
+    await agentSvc.start(JSON.parse(recap) as AgentInstruction)
+  }
+
   async function handleSign() {
     setError(null)
     if (!router) return setError(`No swap router configured for ${safe.chainId}`)
@@ -146,7 +194,7 @@ export default function LimitOrder() {
 
       const mandate = buildLimitOrderMandate({
         moduleAddress,
-        agentAddress: agent as Address,
+        agentAddress: effectiveAgent as Address,
         environment: getEnvironment(safe.chainId),
         swapRouter: router,
         // The balance-change bounds watch the Safe, not the module: the module
@@ -179,7 +227,7 @@ export default function LimitOrder() {
           status: 'signed',
           delegationHash,
           safeMessageHash: result?.safeTxHash,
-          recipient: agent as Address,
+          recipient: effectiveAgent as Address,
           strategyKind: 'limitOrder',
           tokenAddress: fundingAddress as Address,
           targetToken: targetToken as Address,
@@ -193,7 +241,7 @@ export default function LimitOrder() {
         hourglassStrategy: 'limitOrder',
         chainId: safe.chainId,
         safe: safe.safeAddress,
-        agent,
+        agent: effectiveAgent,
         delegationHash,
         fundingToken: fundingAddress,
         targetToken,
@@ -225,13 +273,49 @@ export default function LimitOrder() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,360px)] gap-6 items-stretch">
         <div className="space-y-5">
-          <Block title="Agent">
-            <p className="text-xs text-dim -mt-1 leading-relaxed">
-              You run the agent (via the Hourglass skill). Paste its address; the rest stays locked until you do.
-            </p>
-            <Field label="Agent address" required missing={agent !== '' && !agentValid}>
-              <input type="text" placeholder="0x…" value={agent} onChange={(e) => setAgent(e.target.value)} className={`font-mono ${agent && !agentValid ? 'ring-1 ring-danger' : ''}`} />
-            </Field>
+          <Block
+            title="Agent"
+            action={
+              agentSvc.available ? (
+                <Segmented
+                  value={agentMode}
+                  onChange={setAgentMode}
+                  options={[{ key: 'self', label: 'I run it' }, { key: 'hosted', label: 'Run it for me' }]}
+                />
+              ) : undefined
+            }
+          >
+            {agentMode === 'self' ? (
+              <>
+                <p className="text-xs text-dim -mt-1 leading-relaxed">
+                  You run the agent (via the{' '}
+                  <a href="https://github.com/intuition-box/Hourglass/tree/main/skills/hourglass-agent" target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2" style={{ color: '#34D399' }}>Hourglass skill</a>
+                  ). Paste its address; the rest stays locked until you do.
+                </p>
+                <Field label="Agent address" required missing={agent !== '' && !agentValid}>
+                  <input type="text" placeholder="0x…" value={agent} onChange={(e) => setAgent(e.target.value)} className={`font-mono ${agent && !agentValid ? 'ring-1 ring-danger' : ''}`} />
+                </Field>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-dim -mt-1 leading-relaxed">
+                  Hourglass runs the agent and holds its key. The key only ever pays gas — your spend and your price stay
+                  bounded on-chain, so a misbehaving agent still cannot overspend or overpay.
+                </p>
+                {agentSvc.agentAddress ? (
+                  <div className="flex items-center gap-2 mt-1">
+                    <IconCheck size={14} />
+                    <Mono className="text-xs text-dim">{short(agentSvc.agentAddress)}</Mono>
+                    <CopyChip value={agentSvc.agentAddress} label="Copy" />
+                  </div>
+                ) : (
+                  <Btn kind="secondary" onClick={() => void agentSvc.provision()} disabled={agentSvc.provisioning} className="mt-1">
+                    {agentSvc.provisioning ? 'Creating the agent…' : 'Execute with an agent'}
+                  </Btn>
+                )}
+                {agentSvc.error && <p className="text-xs text-pending mt-2">{agentSvc.error}</p>}
+              </>
+            )}
           </Block>
 
           <div className={agentValid ? 'space-y-5' : 'space-y-5 opacity-40 pointer-events-none select-none'} aria-disabled={!agentValid}>
@@ -304,7 +388,7 @@ export default function LimitOrder() {
               <span className="text-ink text-xs">{selectedBuy ? selectedBuy.symbol : targetValid ? short(targetToken) : '—'}</span>
             </PreviewRow>
             <PreviewRow label="Agent">
-              {agentValid ? <Mono className="text-xs text-dim">{short(agent)}</Mono> : <span className="text-[11px] text-faint">not set</span>}
+              {agentValid ? <Mono className="text-xs text-dim">{short(effectiveAgent)}</Mono> : <span className="text-[11px] text-faint">not set</span>}
             </PreviewRow>
           </div>
 
@@ -312,8 +396,42 @@ export default function LimitOrder() {
             {step === 'done' ? (
               <div className="rounded-xl glass-soft ring-1 ring-line p-4 space-y-3">
                 <div className="flex items-center gap-2 text-sm font-medium text-active"><IconCheck size={16} /> Order signed.</div>
-                <p className="text-xs text-dim leading-relaxed">Hand this instruction to your agent — it fires the buy once the price hits your trigger.</p>
-                {recap && <CopyChip value={recap} label="Copy agent instruction" />}
+                {agentMode === 'self' ? (
+                  <>
+                    <p className="text-xs text-dim leading-relaxed">Hand this instruction to your agent — it fires the buy once the price hits your trigger.</p>
+                    {recap && <CopyChip value={recap} label="Copy agent instruction" />}
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Gas first, then start. The agent sends the redeem itself, so an
+                        unfunded agent cannot fill — the service refuses to start on one. */}
+                    <p className="text-xs text-dim leading-relaxed">
+                      Send the agent gas, then start it. It only ever spends this on the redeem transaction.
+                    </p>
+                    <Btn kind="ghost" size="sm" onClick={handleFundAgent} disabled={fundingAgent} className="w-full">
+                      {fundingAgent ? 'Submitting…' : `Send ${AGENT_GAS_ETH} ETH for gas`}
+                    </Btn>
+                    <Btn
+                      kind="primary"
+                      size="sm"
+                      onClick={handleStartAgent}
+                      disabled={publishing || agentSvc.starting || agentSvc.run?.state === 'running'}
+                      className="w-full"
+                    >
+                      {publishing ? 'Publishing the mandate…' : agentSvc.starting ? 'Starting…' : agentSvc.run ? 'Restart agent' : 'Start agent'}
+                    </Btn>
+                    {agentSvc.run && (
+                      <div className="rounded-lg bg-raised ring-1 ring-line p-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-faint">Agent</span>
+                          <span className="text-[11px] font-medium text-ink">{agentSvc.run.state}</span>
+                        </div>
+                        {agentSvc.run.detail && <p className="text-[11px] text-dim leading-relaxed">{agentSvc.run.detail}</p>}
+                      </div>
+                    )}
+                    {agentSvc.error && <p className="text-[11px] text-pending leading-relaxed">{agentSvc.error}</p>}
+                  </div>
+                )}
               </div>
             ) : (
               <>

@@ -309,7 +309,7 @@ Increase floor).
   `RedeemerEnforcer.sol`, `src/DelegationManager.sol` (verified `pragma 0.8.23`)
 - Installed SDK: `@metamask/smart-accounts-kit@0.3.0` (`CoreCaveatMap`, scope configs)
 - Vendored skills: `.claude/skills/mms-smart-accounts-kit/references/delegations.md`,
-  `.claude/skills/mms-gator-cli/SKILL.md`, `.agents/skills/public-relayer/`
+  `.claude/skills/mms-gator-cli/SKILL.md`
 - Uniswap skills: `swap-integration`, `lp-integration`, `v4-sdk-integration`,
   `dca-bot`, `copy-trade`, `index-bot` (in `~/.claude/skills/`)
 - `erc20PeriodTransfer` usage in this repo: `src/pages/CreateDelegation.tsx`,

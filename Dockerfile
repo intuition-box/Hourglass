@@ -27,7 +27,15 @@ ENV VITE_INTUITION_PUBLISHER_SECRET=$VITE_INTUITION_PUBLISHER_SECRET
 # only matters for non-container builds / when no runtime config is injected.
 ARG VITE_INTUITION_NETWORK=testnet
 ENV VITE_INTUITION_NETWORK=$VITE_INTUITION_NETWORK
+# Public URL of the agent service (server/Dockerfile.agent, its own Coolify service).
+# Not a secret — it is an address the browser calls. Left empty, the Limit order tab
+# only offers the self-run agent path, so a deploy without the service is unchanged.
+ARG VITE_AGENT_SERVICE_URL
+ENV VITE_AGENT_SERVICE_URL=$VITE_AGENT_SERVICE_URL
 RUN bun run build
+# The agent spawns the limit-order runner; install its deps here so the model does
+# not spend steps on `bun install` inside a shell.
+RUN cd skills/hourglass-agent/scripts && bun install
 # -> /app/dist (asset URLs prefixed with /safe-app/)
 
 # ---- Website build (Fumadocs, Next static export) ----
@@ -76,6 +84,15 @@ COPY --from=app /app/package.json /publisher/package.json
 COPY --from=app /app/src /publisher/src
 COPY --from=app /app/server /publisher/server
 
+# The 0G agent service: same shape as the publisher, plus the skill it reads as its
+# system prompt and the runner it drives. No Foundry — the model generates its wallet
+# with viem, which ships in node_modules.
+COPY --from=app /app/node_modules /agent/node_modules
+COPY --from=app /app/package.json /agent/package.json
+COPY --from=app /app/src /agent/src
+COPY --from=app /app/server /agent/server
+COPY --from=app /app/skills /agent/skills
+
 COPY Caddyfile /etc/caddy/Caddyfile
 COPY server/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -84,5 +101,11 @@ ENV INTUITION_NETWORK=testnet
 # The publisher's internal port. NOT `PORT` — platforms (Coolify) inject PORT for
 # the main listener (Caddy on :80); reusing it makes the publisher try to bind :80.
 ENV INTUITION_PUBLISHER_PORT=8787
+# Same reasoning for the agent service's own listener.
+ENV OG_AGENT_PORT=8789
+# Agent private keys live here, and a mandate is signed to an agent address — mount a
+# persistent volume on it or every redeploy strands an unfilled order.
+ENV AGENT_RUNS_DIR=/agent/.agent-runs
+VOLUME ["/agent/.agent-runs"]
 EXPOSE 80
 CMD ["/entrypoint.sh"]

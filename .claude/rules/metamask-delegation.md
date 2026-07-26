@@ -1,6 +1,11 @@
 # MetaMask delegation rules
 
-Load for any work touching the MetaMask Smart Accounts Kit, ERC-7710/7702 delegation, the `erc20PeriodTransfer` caveat, or the 1Shot relayer. That covers `packages/core`, `packages/web`, and `scripts/`.
+Load for any work touching the MetaMask Smart Accounts Kit, ERC-7710/7702 delegation, or the `erc20PeriodTransfer` caveat. That covers `packages/core`, `packages/web`, and `scripts/`.
+
+**Out of scope: third-party relayers / gas abstraction.** Every redemption in this
+repo is a direct transaction to the `DelegationManager`, paid in native gas by the
+redeeming party. If a task proposes routing a redemption through a relayer, a
+paymaster, or any gas-abstraction service, that is a scope expansion: stop and ask.
 
 This rule supplements `code.md` for the TypeScript side and `solidity.md` for any contract side.
 
@@ -8,13 +13,13 @@ This rule supplements `code.md` for the TypeScript side and `solidity.md` for an
 
 A recurring ERC20 subscription: the subscriber signs **one** EIP-712 delegation that lets an organization pull a capped amount **per period**. The cap is enforced on-chain by the Delegation Framework's **built-in `erc20PeriodTransfer` caveat** — there are **no custom caveat enforcers in this repo**. If a task proposes writing a custom enforcer contract, that is a scope expansion: stop and ask.
 
-Three signing paths exist, all charged gaslessly through the 1Shot relayer where noted:
+Two signing paths exist. Both charge by a direct `redeemDelegations` transaction —
+the redeeming party holds native gas on the chain.
 
 | Path | Subscriber account | Where | Notes |
 |---|---|---|---|
 | **Hybrid DeleGator** | Smart account deployed from an EOA (ECDSA signer) | `scripts/create.ts` + `scripts/charge.ts`, `packages/web` "hybrid" method | Org redeems via `DelegationManager`; revoke via `disableDelegation`. |
-| **EIP-7702** | The EOA itself, upgraded to a 7702 delegator | `scripts/relayed.ts` | Fully gasless: fee + amount both paid in USDC via 1Shot. No bundler, no ETH. |
-| **ERC-7715 advanced permissions** | MetaMask-native periodic permission | `packages/web` "erc7715" method | Requires MetaMask ≥13.23 / Flask ≥13.5. First period charged via 1Shot. |
+| **ERC-7715 advanced permissions** | MetaMask-native periodic permission | `packages/web` "erc7715" method | Requires MetaMask ≥13.23 / Flask ≥13.5. |
 
 ## Authoritative sources
 
@@ -22,12 +27,10 @@ Vendored skill references (read these first):
 
 - **`mms-smart-accounts-kit`** — `.claude/skills/mms-smart-accounts-kit/SKILL.md` + `references/` (smart-accounts, delegations, advanced-permissions). ERC-4337 account creation, signer types (Hybrid / MultiSig / Stateless7702), delegations, ERC-7715 advanced permissions, the Delegation Framework.
 - **`mms-gator-cli`** — `.claude/skills/mms-gator-cli/SKILL.md`. The `@metamask/gator-cli` for delegation operations (init, grant, redeem, revoke) and EIP-7702 EOA upgrade — useful for shell testing before wiring the UI.
-- **`public-relayer`** — `.agents/skills/public-relayer/SKILL.md`. The 1Shot relayer JSON-RPC API (`relayer_send7710Transaction`, `relayer_estimate7710Transaction`, fee data, status). This is the gas-abstraction layer.
 
 Upstream sources of truth (the vendored skills are snapshots — defer here when SDK behavior is unclear):
 
 - MetaMask Smart Accounts Kit docs — https://docs.metamask.io/smart-accounts-kit/
-- 1Shot relayer docs — https://1shotapi.com
 
 If a vendored skill conflicts with upstream, upstream wins. If SDK behavior conflicts with this rule file, escalate to the user — do not silently work around it.
 
@@ -42,11 +45,10 @@ If a vendored skill conflicts with upstream, upstream wins. If SDK behavior conf
 Use the Smart Accounts Kit factory functions from `@metamask/smart-accounts-kit`. Do not roll a custom factory.
 
 - **Hybrid** (CLI + web "hybrid"): deployed on-demand, deterministically derived from the controlling EOA + salt. The smart account holds the tokens and is the `delegator`. The controlling EOA is the signer — `subscriber.owner` in the terms is the **EOA**, not the smart account address.
-- **EIP-7702** (relayed): the subscriber's address *is* the EOA — no separate deploy. The one-time 7702 upgrade is billed in USDC on the first charge.
 
 ## Delegation signing
 
-A delegation is an EIP-712-signed message granting a delegate (the org / the relayer's `targetAddress`) permission to execute on behalf of the delegator, bounded by the caveat.
+A delegation is an EIP-712-signed message granting a delegate (the org / the agent) permission to execute on behalf of the delegator, bounded by the caveat.
 
 Flow:
 
@@ -58,22 +60,15 @@ Flow:
 **Hard rules**:
 
 - The `terms` are computed once and **never modified after signing** — tampering changes the salt and invalidates the signature. The salt binds the signature to the exact pinned agreement.
-- The delegate (org or relayer target) is set at signing time and cannot be reassigned without a new signature.
+- The delegate (org or agent) is set at signing time and cannot be reassigned without a new signature.
 - Never reuse a delegation signature across chains or across distinct terms.
 
 ## Execution under delegation
 
-- **Direct (org redeems)**: the org EOA sends a plain tx to the `DelegationManager` (`redeemDelegations`) with the signed delegation + the transfer execution. The caveat caps the pull. Needs the org to hold gas on the chain.
-- **Gasless (1Shot relayer)**: submit a bundle `[fee → feeCollector, amount → org]` to the 1Shot relayer, which redeems on-chain and is paid in USDC. No ETH, no bundler, no paymaster. The relayer fee is gas-priced in USDC and can spike on testnet — set the period cap well above fee + amount.
+- **Direct (the delegate redeems)**: the org EOA — or the agent wallet, for a strategy mandate — sends a plain tx to the `DelegationManager` (`redeemDelegations`) with the signed delegation + the execution. The caveat caps the pull. **This is the only redemption path in the repo.** The redeeming party must hold native gas on the chain; funding that wallet is an explicit, separate step, never bundled into another consent.
 - **Revoke**: the subscriber calls `disableDelegation` (a user operation from the Hybrid smart account, needs a bundler + a little ETH). After revoke, any further charge reverts with `CannotUseADisabledDelegation`.
 
 Where a flow has both a happy path and a revert path, demonstrate both.
-
-## Relayer robustness (1Shot testnet)
-
-- The testnet relayer (`relayer.1shotapi.dev`) occasionally returns a transient `ERR_ONESHOT` ("Not Found") on `estimate`/`send` — retry with backoff (see `packages/core/src/relayer.ts`).
-- Its status API can lag. Confirm the charge **on-chain** (USDC spent on fee, ETH unchanged) rather than trusting the status response.
-- Re-estimate with a buffered fee to absorb gas drift between estimate and send.
 
 ## Storage
 
