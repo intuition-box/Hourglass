@@ -1,0 +1,109 @@
+---
+title: Running an agent
+description: The two ways to execute a mandate — run the agent yourself, or use the hosted one — and what each means for custody.
+---
+
+A mandate is inert until something redeems it. That something is an **agent**: a
+wallet with a little gas and a process that watches for the moment to act. There
+are two ways to get one.
+
+| | **Self-run** | **Hosted** |
+|---|---|---|
+| Who holds the agent key | you | **HourGlass** |
+| Who pays gas | you, into your own agent wallet | you, into the provisioned wallet |
+| Setup | install the agent skill, create a wallet | one click in the app |
+| Non-custodial | fully | **no — see below** |
+
+Both are bounded by the same on-chain caveats. The difference is who holds a key
+that can only ever spend gas.
+
+## Self-run
+
+The **Hourglass agent skill** drives the whole agent side from your own LLM
+tooling: it creates the wallet, reports the address, discovers the mandates signed
+to it, and executes them.
+
+1. **Create the agent wallet.** A fresh keypair — `cast wallet new` or any wallet
+   library. The private key never leaves your machine and only ever pays gas.
+2. **Fund it with a little ETH** on the mandate's chain.
+3. **Give the address to the Safe operator.** They paste it into the strategy tab
+   as the agent address and sign the mandate. Everything stays locked in the UI
+   until an agent address is entered — the delegate must exist before there is
+   anything to sign.
+4. **Discover.** The agent reads the delegations addressed to it from the
+   [Intuition graph](/docs/concepts/discovery). Nothing appears until the mandate
+   is published; wait and retry.
+5. **Execute.** For a [limit order](/docs/agent-defi/limit-order), build the swap
+   through the Uniswap Trading API (CLASSIC routing) and redeem. For
+   [liquidity](/docs/agent-defi/liquidity), redeem the three plan delegations in
+   order.
+
+A self-run agent needs a **Uniswap Trading API key**. It is agent-side only —
+never ship it to a browser.
+
+On this path the claim holds without qualification: HourGlass holds no keys and
+runs nothing for you.
+
+## Hosted
+
+The app also offers **Execute with an agent**, which provisions and runs the agent
+for you. The order is forced by the chain:
+
+1. **Provision.** The service creates a fresh wallet and returns its address. This
+   must come first — the mandate's delegate *is* that address, so it has to exist
+   before you can sign.
+2. **Sign** the mandate to that address, from the Safe.
+3. **Fund** the address with gas, as a separate transaction. Funding comes after
+   signing, so gas is only ever committed to a mandate that actually exists.
+4. **Start the run,** and watch its state: `provisioned` → `running` → `filled`,
+   or `blocked` / `failed`.
+
+The runtime is a 0G Compute model given a shell and the agent skill — the model is
+the brain, the harness is the hands. Before a run is handed out, the service
+verifies the key actually derives the address it claims and is not a trivially
+guessable value; a model that fails that check gets no fallback.
+
+### The custody trade-off
+
+<Callout type="warn">
+On the hosted path, **HourGlass holds the agent's private key.** This is a
+deliberate reversal of the non-custodial stance, taken to remove setup friction —
+not an oversight.
+</Callout>
+
+What that does and does not put at risk:
+
+- **Your treasury is still bounded by the chain.** The mandate's caveats cap the
+  spend, set the price floor, and limit the number of fills. A confused,
+  compromised, or prompt-injected model cannot exceed the cap, touch a different
+  token, or drain the Safe. That bound is exactly what this path is built to
+  demonstrate.
+- **The agent wallet itself is not protected.** Those caveats protect the Safe, not
+  the process. The harness gives the model an unbounded shell and the container
+  holds the key. Treat the provisioned wallet as **throwaway**: fund it with enough
+  ETH for one redeem and nothing more.
+
+<Callout type="info">
+HourGlass makes no claim that the hosted agent runs in a trusted execution
+environment. 0G publishes Compute, Storage, Chain and DA — services you call — not
+a product for hosting an agent, so the runtime is ordinary infrastructure and
+should be trusted accordingly.
+</Callout>
+
+If you need the non-custodial property, run the agent yourself.
+
+## What an agent can never do
+
+Whichever path you choose, the caveats are the same and are checked on-chain at
+every redeem:
+
+- It cannot spend more than the signed cap.
+- It cannot call a contract or method outside the mandate's scope.
+- It cannot redeem more times than the mandate allows.
+- It cannot move funds out of the Safe — actions run **as the Safe**, and the
+  proceeds return to the Safe.
+- It cannot keep acting after you revoke. The Safe owners `disableDelegation` and
+  every further redeem reverts.
+
+The agent's only real privilege is holding gas, and its only real power is choosing
+*whether and when* to submit an action you already authorized.

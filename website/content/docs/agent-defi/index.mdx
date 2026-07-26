@@ -1,0 +1,77 @@
+---
+title: Agent DeFi
+description: Sign a mandate, an agent executes it — bounded on-chain, revocable, with the treasury never leaving the Safe.
+icon: Bot
+---
+
+**Agent DeFi** is the Safe App's third rail. Where a
+[subscription](/docs/concepts/subscriptions) or a [stream](/docs/concepts/streams)
+moves a fixed amount by a literal `transfer`, an Agent DeFi mandate authorizes an
+autonomous agent to perform a *market* action — provide liquidity, or buy at a
+price you set — bounded on-chain by caveats it cannot exceed.
+
+Two strategies ship today, under the **Agent DeFi** tab:
+
+| Strategy | What it does | Fires |
+|---|---|---|
+| [**Provide liquidity**](/docs/agent-defi/liquidity) | deposits two tokens into a Uniswap v3 pool and earns a share of its trading fees | once, then optionally auto-compounds |
+| [**Buy the dip**](/docs/agent-defi/limit-order) | fills a single swap when the market reaches your trigger price | exactly once |
+
+## The shared model
+
+Every mandate follows the same shape as the rest of HourGlass — one signature, an
+on-chain bound, no custody:
+
+1. **The Safe signs a mandate.** An EIP-712 delegation naming a specific **agent
+   address** as the delegate. On a multisig, this is a threshold action.
+2. **The mandate is published** to the [Intuition graph](/docs/concepts/discovery)
+   so the agent can discover it. As everywhere else, that index is a convenience —
+   it holds no authority.
+3. **The agent redeems it.** It builds the call, submits the transaction, and pays
+   the gas. The action executes **as the Safe**, through the Safe's DeleGator
+   module.
+4. **The caveats bound it.** Whatever the agent submits, the Delegation Framework
+   reverts anything outside the signed bound.
+
+The agent holds **nothing but gas**. Funds leave the Safe only into the action the
+mandate authorizes, and what comes back — the LP position, the bought token —
+returns to the Safe.
+
+## What is enforced, and what is not
+
+This distinction matters more here than on the payment rails, because a market
+action has an outcome the chain cannot promise.
+
+- **Enforced on-chain.** The call surface (which contract, which method), the
+  amounts, the maximum spend, the minimum received, who may redeem, and how many
+  times. A buggy or compromised agent cannot overspend, call another contract, or
+  drain the Safe.
+- **Not enforced.** That the agent acts *promptly*, or at all, and that the
+  strategy is *profitable*. The mandate bounds operational risk — never market
+  risk or agent punctuality. An agent that goes offline simply does nothing; the
+  Safe keeps its funds and the mandate stays revocable.
+
+## Running the agent
+
+You supply the agent — either running it yourself or using the hosted option in
+the app. See [Running an agent](/docs/agent-defi/agents) for both paths, what gas
+it needs, and the custody question the hosted path raises.
+
+## Revoking
+
+Every mandate is a delegation, so it is cancelled the same way as any other:
+the Safe owners `disableDelegation` and every further redeem reverts. See
+[Revoke](/docs/guides/revoke). The multisig is the kill switch — there is no
+separate off-switch on the agent's side.
+
+## Chains
+
+Agent DeFi runs on mainnet, where the liquidity is:
+
+| Strategy | Chains |
+|---|---|
+| Provide liquidity | Base (8453), Base Sepolia (84532) |
+| Buy the dip | Ethereum (1), Base (8453) |
+
+Only Ethereum and Base carry the HourGlass enforcer instances, so only mandates
+there are attributable in [analytics](/docs/analytics).

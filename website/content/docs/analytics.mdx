@@ -27,16 +27,25 @@ becomes a one-key filter (`WHERE contract_address = <our enforcer>`) with **no
 central list of delegation hashes**. This works precisely because the app is
 local-first.
 
-This now spans **both** payment shapes, so attribution rests on two self-deployed
-instances:
+The two payment shapes are attributable through one self-deployed instance each:
 
 - the `ERC20PeriodTransferEnforcer` for [subscriptions](/docs/concepts/subscriptions);
 - the `ERC20StreamingEnforcer` for [streams](/docs/concepts/streams).
 
-The rest of the enforcer suite is deployed under the same salt but emits nothing
-today, since no delegation references it yet. Adding a payment shape later means
-indexing one more emitter address, not a new deployment — the addresses are in
-[Deployments](/docs/deployments).
+Ten instances in total are now routed through, since the
+[Agent DeFi](/docs/agent-defi) mandates carry their own caveats — balance-change,
+exact-execution, redeemer, limited-calls and the `functionCall` scope enforcers.
+Routing *every* caveat a mandate uses through a HourGlass instance is deliberate:
+it makes the whole mandate attributable rather than one caveat of it, and the
+discovery side matches on those same addresses, so a mandate signed against the
+canonical enforcer would never be rediscovered.
+
+The dashboard shipped today still derives its metrics from the two payment
+enforcers; the agent rails are attributable by the same mechanism but are not yet
+broken out in the UI. The rest of the enforcer suite is deployed under the same
+salt and emits nothing, since no delegation references it. Adding a shape later
+means indexing one more emitter address, not a new deployment — the addresses are
+in [Deployments](/docs/deployments).
 
 The security implications of self-deploying audited bytecode are covered in
 [Security](/docs/security#self-deployed-enforcer-instances).
@@ -54,15 +63,10 @@ delegation struct including caveats and the `salt` (= the pinned-agreement hash)
 - Subscriptions: `ERC20PeriodTransferEnforcer.TransferredInPeriod`. The per-charge
   amount is the in-period delta of the cumulative `transferredInCurrentPeriod`,
   which resets each period — handle the period-boundary reset when computing it.
-- Streams: the streaming enforcer's transfer/claim event. A stream is claim-based,
-  so the per-claim amount is read directly rather than via a period delta.
-
-<Callout type="warn">
-Confirm the exact streaming event name and field layout against
-`@metamask/delegation-abis` before building the indexer — do not assume it mirrors
-the period enforcer. Streams accrue and are claimed, so the amount semantics
-differ from the period enforcer's cumulative-with-reset counter.
-</Callout>
+- Streams: `ERC20StreamingEnforcer.IncreasedSpentMap`. A stream is claim-based and
+  the event carries a cumulative `spent`, so the per-claim amount is the delta
+  between consecutive events for a delegation — it never resets, unlike the period
+  enforcer's counter.
 
 ## Deriving the dashboard
 

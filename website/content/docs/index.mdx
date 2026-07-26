@@ -1,13 +1,16 @@
 ---
 title: What is HourGlass
-description: Recurring on-chain payments for Safe — sign once, capped on-chain, non-custodial, revocable.
+description: Bounded on-chain authority for Safe — sign once, capped on-chain, non-custodial, revocable.
 icon: Hourglass
 ---
 
-HourGlass turns a recurring payment into a **single signature**. A payer signs one
-EIP-712 delegation that lets a receiver pull a bounded amount of an ERC-20 token
-over time. The bound is enforced **on-chain** by MetaMask's audited Delegation
-Framework — HourGlass adds no custom on-chain logic.
+HourGlass turns a standing authorization into a **single signature**. A Safe signs
+one EIP-712 delegation that lets someone else — a payee, or an autonomous agent —
+take a bounded action on its behalf. The bound is enforced **on-chain** by
+MetaMask's audited Delegation Framework; HourGlass adds no custom on-chain logic.
+
+It started as recurring payments and now covers three rails: **payments**,
+**agent-run DeFi strategies**, and an **Aqua** liquidity integration.
 
 ## The guarantees
 
@@ -25,9 +28,12 @@ Framework — HourGlass adds no custom on-chain logic.
   that index is a convenience: if it's down, both sides still create, sign, and
   charge exactly as before.
 
-## Two products, one model
+These guarantees describe the delegation rails — payments and Agent DeFi. The
+[Aqua](/docs/aqua) tab is a different mechanism and is called out separately below.
 
-HourGlass offers two payment shapes, both built on the same delegation primitive:
+## Payments: two shapes, one model
+
+Both payment shapes are built on the same delegation primitive:
 
 | | **Subscription** | **Stream** |
 |---|---|---|
@@ -38,3 +44,27 @@ HourGlass offers two payment shapes, both built on the same delegation primitive
 
 Start with [Delegation](/docs/concepts/delegation) for the shared model, then read
 [Subscriptions](/docs/concepts/subscriptions) or [Streams](/docs/concepts/streams).
+
+## Agent DeFi: the same model, aimed at a market action
+
+The [Agent DeFi](/docs/agent-defi) rail uses the identical primitive, but the
+delegate is an autonomous **agent** and the authorized action is a market
+operation rather than a transfer:
+
+| | What it does | Bound on-chain by |
+|---|---|---|
+| [**Provide liquidity**](/docs/agent-defi/liquidity) | opens a Uniswap v3 position, optionally compounding its fees | the exact calldata, single-use, agent-locked, one-hour window |
+| [**Buy the dip**](/docs/agent-defi/limit-order) | fills one swap when the market hits your trigger price | a max spend, a minimum received, and a single fill |
+
+The agent holds nothing but gas, and every action runs **as the Safe**. See
+[Running an agent](/docs/agent-defi/agents) — including what the hosted option
+means for custody.
+
+## Aqua: not a delegation
+
+The [Aqua](/docs/aqua) tab provides liquidity to 1inch's shared liquidity layer
+without moving funds out of the Safe. It is worth knowing that it works
+differently from everything above: there is **no delegation and no caveat**, and
+exposure is bounded by an ordinary ERC-20 **allowance** instead. It is also Base
+only, and not tradable until the 1inch API submission (which requires KYB) is in
+place.

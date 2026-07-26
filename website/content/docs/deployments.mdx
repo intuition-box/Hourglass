@@ -37,8 +37,9 @@ Ethereum mainnet and Base — a given enforcer is at one address, everywhere.
 ## Ethereum mainnet (chain 1) and Base (chain 8453)
 
 Deployer: `0x2FF0363132d0dc5feb090790C46B77EF1ce96aa2`. On Ethereum mainnet, the
-three enforcers HourGlass delegations reference were deployed 2026-06-25 and the rest
-of the suite on 2026-07-25. On Base, all 37 were deployed 2026-07-25.
+first three — the period, timestamp and streaming enforcers the payment rails use —
+were deployed 2026-06-25 and the rest of the suite on 2026-07-25. On Base, all 37
+were deployed 2026-07-25.
 
 Source is verified on Etherscan for mainnet and on Basescan for Base.
 
@@ -57,14 +58,30 @@ project, not in the Delegation Framework.
 
 ### Enforcers referenced by HourGlass delegations
 
-These three are the ones the app actually routes through — a subscription cap, its
-optional end date, and the payroll stream.
+These ten are the ones the app actually routes through. The app overrides the SDK's
+canonical address for each of them, so every caveat a HourGlass delegation carries
+points at a HourGlass-owned instance — which is what makes a whole mandate, not just
+one caveat of it, attributable by emitter address.
 
-| Contract | Address |
-|---|---|
-| `ERC20PeriodTransferEnforcer` | `0x11262E3116a50654547AB0A417BE77eB14b9F339` |
-| `TimestampEnforcer` | `0xF1635460548F44543366ec4453D512a7Ce85Af85` |
-| `ERC20StreamingEnforcer` | `0xE475D14d61756D6e940B74C20d2E44EB70c71a8D` |
+| Contract | Address | Used by |
+|---|---|---|
+| `ERC20PeriodTransferEnforcer` | `0x11262E3116a50654547AB0A417BE77eB14b9F339` | subscriptions — the per-period cap |
+| `TimestampEnforcer` | `0xF1635460548F44543366ec4453D512a7Ce85Af85` | subscriptions (optional end date), the liquidity plan's one-hour window |
+| `ERC20StreamingEnforcer` | `0xE475D14d61756D6e940B74C20d2E44EB70c71a8D` | streams — the payroll accrual |
+| `ERC20BalanceChangeEnforcer` | `0xf069a9da3987eDA46F711dC40012f3674c6Ad517` | [limit orders](/docs/agent-defi/limit-order) — max spend and min received |
+| `AllowedTargetsEnforcer` | `0x71832d69693A818C7e6163e632c5e3fBedf65362` | the `functionCall` scope — which contract |
+| `AllowedMethodsEnforcer` | `0x5FFb84883543A9ED068b1D3DB428037e95C1f26A` | the `functionCall` scope — which method |
+| `ValueLteEnforcer` | `0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076` | the `functionCall` scope — the native-value bound |
+| `LimitedCallsEnforcer` | `0x0c6a3a33d02c7bEb6B066960CE92DF8CC8EA35C8` | single-use mandates — one fill, one redeem |
+| `ExactExecutionEnforcer` | `0xb0deD8b9f02f8D100078F1AA75Ab9FCDB0D5e729` | [liquidity](/docs/agent-defi/liquidity) — pins the calldata byte for byte |
+| `RedeemerEnforcer` | `0x787308b5d74797E9FEA19cc186bcF12a19dcABB0` | agent mandates — only the named agent may redeem |
+
+<Callout type="info">
+Adding an address to the registry does not change what gets signed. Routing a new
+delegation type through a HourGlass instance is a deliberate, separate change to the
+environment overrides — and the write side and the discovery side must agree on the
+address, or a published mandate is never rediscovered.
+</Callout>
 
 ### Rest of the suite
 
@@ -74,15 +91,12 @@ enforcer without a new deployment round. They are **not** wired into the app tod
 | Contract | Address |
 |---|---|
 | `AllowedCalldataEnforcer` | `0xb418A0C7003F15EEC765D1e1c0E198cA8531fABe` |
-| `AllowedMethodsEnforcer` | `0x5FFb84883543A9ED068b1D3DB428037e95C1f26A` |
-| `AllowedTargetsEnforcer` | `0x71832d69693A818C7e6163e632c5e3fBedf65362` |
 | `ApprovalRevocationEnforcer` | `0xa92E4c2f624ac064875CA92beDa44629958A0803` |
 | `ArgsEqualityCheckEnforcer` | `0xAF081f825b0Fd4D1cA3b56E2766248A3689Aea4f` |
 | `BlockNumberEnforcer` | `0xDaE46FC044CC9A03E0274E51c900946F52afC59A` |
 | `DeployedEnforcer` | `0x0F40211A6E6B68920690f2a0619714283706E7b3` |
 | `ERC1155BalanceChangeEnforcer` | `0x341CD2A57ececdAbd41D348b7B616C63D3Ba86f7` |
 | `ERC1155MultiOperationIncreaseBalanceEnforcer` | `0x7a6c0065a6306b93e82E5Dc7BFD871990a0F910E` |
-| `ERC20BalanceChangeEnforcer` | `0xf069a9da3987eDA46F711dC40012f3674c6Ad517` |
 | `ERC20MultiOperationIncreaseBalanceEnforcer` | `0xd1f2F8b225e16A1a22E0C760e25B8da5e58fbb88` |
 | `ERC20TransferAmountEnforcer` | `0xf180Ec5552f7251268540f5D0292e44e6cD37491` |
 | `ERC721BalanceChangeEnforcer` | `0x3a9aF4D3089F6755f80FF5568268CC1fFd233103` |
@@ -91,9 +105,7 @@ enforcer without a new deployment round. They are **not** wired into the app tod
 | `ExactCalldataBatchEnforcer` | `0xE7dB63Ae90BF479Fd3Ca0148Eca73560DD324591` |
 | `ExactCalldataEnforcer` | `0x0a1A4e45Be9183465c0f4ac7907605269B2a2573` |
 | `ExactExecutionBatchEnforcer` | `0x1c0e253Ef34F05f9Bb35bc373F811A719478a4BB` |
-| `ExactExecutionEnforcer` | `0xb0deD8b9f02f8D100078F1AA75Ab9FCDB0D5e729` |
 | `IdEnforcer` | `0xF60958a138A885FD10418E7b0D76Ceb45AA25605` |
-| `LimitedCallsEnforcer` | `0x0c6a3a33d02c7bEb6B066960CE92DF8CC8EA35C8` |
 | `LogicalOrWrapperEnforcer` | `0x3FeDC2610F558E6a0e5c5d9A591E4621C76Ea4f7` |
 | `MultiTokenPeriodEnforcer` | `0xAA7E306EcBCFF5A5b37BE13d8a4655E0998D8E87` |
 | `NativeBalanceChangeEnforcer` | `0xF069FB64eFDBdA222a86952fC71E87CC6731d545` |
@@ -104,9 +116,7 @@ enforcer without a new deployment round. They are **not** wired into the app tod
 | `NativeTokenTransferAmountEnforcer` | `0x953AB69e4aeE3a5e311261573B826Daf29735e52` |
 | `NonceEnforcer` | `0x3266A5827F3fFED7c4BBa1a7F461F46C8D2835b6` |
 | `OwnershipTransferEnforcer` | `0xcA474A11645EeCBC225B60944940f81eCd1A7DF8` |
-| `RedeemerEnforcer` | `0x787308b5d74797E9FEA19cc186bcF12a19dcABB0` |
 | `SpecificActionERC20TransferBatchEnforcer` | `0xE9F0fb5011Db7F59763d999470af2b7f586712a0` |
-| `ValueLteEnforcer` | `0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076` |
 
 Two of them take constructor arguments: `LogicalOrWrapperEnforcer` receives the
 `DelegationManager`, and `NativeTokenPaymentEnforcer` receives the
@@ -118,6 +128,15 @@ canonical one. Both are part of the verified source on Etherscan.
 Base Sepolia and Ethereum Sepolia use MetaMask's canonical enforcer deployments. No
 HourGlass-owned instance exists there, so charges on those chains are not
 attributable by emitter address.
+
+## The provenance page
+
+The app also serves a static **provenance page** at `/safe-app/verify`. It lists the
+canonical, audited MetaMask addresses the app builds on, per chain, with links to
+the Delegation Framework repository and its Consensys Diligence audits.
+
+It makes no chain calls and needs no wallet, so it can be hosted anywhere and stays
+readable even if the rest of the app is down.
 
 ## Verifying this yourself
 

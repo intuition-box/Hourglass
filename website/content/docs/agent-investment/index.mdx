@@ -4,9 +4,25 @@ description: Delegate a bounded investment strategy to an autonomous agent — n
 icon: Bot
 ---
 
-**Agent investment** lets a Safe delegate a recurring investment strategy — today,
+<Callout type="warn">
+**Not shipped.** The DCA rail described in this section is a design, not a working
+feature. The **Strategy** tab is hidden from the Safe App — the rail needs the
+Permit2 setup the [limit order](/docs/agent-defi/limit-order) has before it can
+execute — and these pages are kept out of the documentation sidebar for that
+reason.
+
+For the agent strategies that **do** work today, see
+[Agent DeFi](/docs/agent-defi): [provide liquidity](/docs/agent-defi/liquidity) and
+[buy the dip](/docs/agent-defi/limit-order).
+</Callout>
+
+**Agent investment** would let a Safe delegate a recurring investment strategy —
 dollar-cost averaging (DCA) — to an autonomous agent, without ever handing over the
 keys or the treasury.
+
+The design below is worth reading anyway: the two-safe architecture and the
+EIP-1271 owner-set constraint apply to every agent mandate, including the ones that
+ship today.
 
 The Safe signs **one** mandate. An agent then runs the strategy on the Safe's
 behalf, bounded on-chain by a per-swap cap it can never exceed. The treasury stays

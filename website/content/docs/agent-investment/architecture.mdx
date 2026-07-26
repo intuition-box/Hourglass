@@ -4,6 +4,12 @@ description: Two safes, two delegations — how a treasury enforces an on-chain 
 icon: Network
 ---
 
+<Callout type="warn">
+**Not shipped.** This page describes the DCA rail, which is a design rather than a
+working feature — the Strategy tab is hidden from the Safe App. See
+[Agent DeFi](/docs/agent-defi) for the agent strategies that run today.
+</Callout>
+
 A swap cannot be bounded "per period" on-chain: the period enforcers only accept a
 literal `transfer`, and revert on a swap (see [Strategies](/docs/agent-investment/strategies)).
 The way around it is **two safes and two delegations**: the treasury enforces the
