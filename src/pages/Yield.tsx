@@ -5,6 +5,7 @@ import { useUniswapPools } from '../hooks/useUniswapPools'
 import { buildDepositPlan, type DepositPlan } from '../lib/uniswapPosition'
 import { buildYieldDelegations, buildStoredYieldPlan, type YieldDelegation, type StoredYieldPlan } from '../lib/yieldDelegations'
 import { useAgentRun } from '../hooks/useAgentRun'
+import { useSafeYieldPlans } from '../hooks/useSafeYieldPlans'
 import { finalizePending } from '../hooks/useFinalizePending'
 import { discoverIncomingDelegations } from '../lib/intuition/discover'
 import { buildCompoundMandate, buildStoredCompoundDelegation, type CompoundMandate, type CompoundMode, type StoredCompoundDelegation } from '../lib/compoundDelegation'
@@ -113,6 +114,27 @@ export default function Yield() {
   // Safe App (no bot, no key handoff). The choice sets the delegate at signing time.
   const [redeemMode, setRedeemMode] = useState<'hosted' | 'manual'>('hosted')
   const agentSvc = useAgentRun()
+  const [moduleAddress, setModuleAddress] = useState<Address | undefined>(undefined)
+  const safePlans = useSafeYieldPlans(moduleAddress, safe.chainId)
+
+  // The delegator of every mandate this Safe signs, and the key the graph is indexed
+  // by — so it has to be known on load, not only once the operator signs something.
+  useEffect(() => {
+    const chain = findChain(safe.chainId)
+    if (!chain) return
+    let cancelled = false
+    const client = createPublicClient({ chain, transport: http(rpcUrl(safe.chainId)) })
+    client
+      .readContract({
+        address: getAddresses(safe.chainId).delegatorModuleFactory,
+        abi: DeleGatorModuleFactoryABI,
+        functionName: 'predictAddress',
+        args: [safe.safeAddress as Address, DEFAULT_SALT],
+      })
+      .then((addr) => { if (!cancelled) setModuleAddress(addr as Address) })
+      .catch(() => { if (!cancelled) setModuleAddress(undefined) })
+    return () => { cancelled = true }
+  }, [safe.chainId, safe.safeAddress])
   const [fundingAgent, setFundingAgent] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishStatus, setPublishStatus] = useState<string | null>(null)
@@ -637,6 +659,37 @@ export default function Yield() {
             )
           })}
         </div>
+      )}
+
+        {/* Recovered from the graph, not from local storage: a reload used to lose the
+          agent address and with it any way back to a plan left half-finished. */}
+      {safePlans.plans.some((pl) => !pl.done) && (
+        <Block title="Your plans">
+          <div className="space-y-2 -mt-1">
+            {safePlans.plans.filter((pl) => !pl.done).map((pl) => {
+              const spent = pl.steps.filter((st) => st.consumed).length
+              return (
+                <div key={pl.agentAddress} className="rounded-lg bg-raised ring-1 ring-line p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs text-ink">
+                      {pl.complete ? `Deposit ${spent}/${pl.steps.length} done` : `Indexing (${pl.steps.length}/3 steps)`}
+                    </div>
+                    <Mono className="text-[11px] text-faint">{short(pl.agentAddress)}</Mono>
+                  </div>
+                  {pl.complete && (
+                    <Btn kind="ghost" size="sm" onClick={() => agentSvc.adopt(pl.agentAddress)}>
+                      Resume
+                    </Btn>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-faint">
+            A plan that stopped partway is still valid — resuming skips what already landed, and nothing needs
+            re-signing.
+          </p>
+        </Block>
       )}
 
       {pool && (

@@ -24,6 +24,8 @@ export interface UseAgentRun {
   starting: boolean
   error: string | null
   provision: () => Promise<void>
+  /** Re-attach to an agent recovered from the graph after a reload. */
+  adopt: (address: Address) => void
   start: (instruction: AgentInstruction) => Promise<void>
 }
 
@@ -53,6 +55,16 @@ export function useAgentRun(): UseAgentRun {
       setProvisioning(false)
     }
   }, [baseUrl])
+
+  /**
+   * Point the hook at an agent that already exists. After a reload the app has no run
+   * id, but the run directory is keyed on the address — so the service can be addressed
+   * by it, and the operator gets their Restart button back without resigning anything.
+   */
+  const adopt = useCallback((address: Address) => {
+    setAgentAddress(address)
+    setId(address.slice(2, 10).toLowerCase())
+  }, [])
 
   const start = useCallback(
     async (instruction: AgentInstruction) => {
@@ -101,6 +113,7 @@ export function useAgentRun(): UseAgentRun {
     starting,
     error,
     provision,
+    adopt,
     start,
   }
 }

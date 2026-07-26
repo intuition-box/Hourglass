@@ -40,6 +40,17 @@ const CANONICAL_EXACT_EXECUTION: Address = '0x146713078D39eCC1F5338309c28405ccf8
 const HOURGLASS_EXACT_EXECUTION: Address = '0xb0deD8b9f02f8D100078F1AA75Ab9FCDB0D5e729'
 const HOURGLASS_LIMITED_CALLS: Address = '0x0c6a3a33d02c7bEb6B066960CE92DF8CC8EA35C8'
 
+/**
+ * Default RPC per chain. Not the chain's canonical public endpoint: reading each step's
+ * state before submitting costs two calls per step on top of the transactions, and
+ * mainnet.base.org rate-limits that within a single run — which is how a valid plan
+ * ended up stalled after its two approvals. RPC_URL overrides this.
+ */
+const DEFAULT_RPC: Record<number, string> = {
+  [base.id]: 'https://base-rpc.publicnode.com',
+  [mainnet.id]: 'https://ethereum-rpc.publicnode.com',
+}
+
 const CHAINS: Record<number, Chain> = {
   [mainnet.id]: mainnet,
   [base.id]: base,
@@ -221,6 +232,28 @@ async function readStepState(client: PublicClient, delegationHash: Hex): Promise
   return count > 0n ? 'consumed' : 'ready'
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+/**
+ * Retry the state read with backoff. A read that fails is not a step that is broken —
+ * it is a node refusing to answer, and treating the two alike strands a plan halfway
+ * with both approvals spent and the mint still redeemable.
+ */
+async function readStepStateWithRetry(client: PublicClient, delegationHash: Hex, attempts = 5): Promise<StepState> {
+  let lastError: unknown
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await readStepState(client, delegationHash)
+    } catch (err) {
+      lastError = err
+      const wait = 2000 * 2 ** i
+      console.log(`  state read failed (${i + 1}/${attempts}), retrying in ${wait / 1000}s`)
+      await sleep(wait)
+    }
+  }
+  throw new Error(`could not read step state after ${attempts} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`)
+}
+
 // --- execute ------------------------------------------------------------------
 
 function toSdkDelegation(d: DelegationStruct): Delegation {
@@ -267,8 +300,9 @@ async function main() {
     throw new Error(`AGENT_PRIVATE_KEY (${account.address}) does not match the instruction's agent (${instruction.agent})`)
   }
 
-  const publicClient = createPublicClient({ chain, transport: http(process.env.RPC_URL) }) as PublicClient
-  const walletClient = createWalletClient({ account, chain, transport: http(process.env.RPC_URL) })
+  const rpc = process.env.RPC_URL ?? DEFAULT_RPC[instruction.chainId]
+  const publicClient = createPublicClient({ chain, transport: http(rpc) }) as PublicClient
+  const walletClient = createWalletClient({ account, chain, transport: http(rpc) })
 
   console.log(`Yield agent ${account.address} on chain ${instruction.chainId} (${network})`)
 
@@ -283,7 +317,7 @@ async function main() {
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i]
     const label = `[${i + 1}/${steps.length}] ${LABELS[i]} -> ${step.target}`
-    const state = await readStepState(publicClient, step.delegationHash)
+    const state = await readStepStateWithRetry(publicClient, step.delegationHash)
 
     if (state === 'revoked') {
       console.log(`${label}: revoked by the Safe — stopping.`)
