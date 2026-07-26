@@ -7,8 +7,10 @@ import { buildYieldDelegations, buildStoredYieldPlan, type YieldDelegation, type
 import { useAgentRun } from '../hooks/useAgentRun'
 import { useSafeYieldPlans } from '../hooks/useSafeYieldPlans'
 import { useSafePositions } from '../hooks/useSafePositions'
-import { buildRevokePlanTxs } from '../lib/revoke'
 import { SubscriptionDetail } from './SubscriptionDetail'
+import { PlanFolder } from '../ui/PlanFolder'
+import { buildRevokeTxs } from '../lib/revoke'
+import type { YieldPlanStep } from '../hooks/useSafeYieldPlans'
 import type { StoredDelegation } from '../lib/storage'
 import { Positions } from '../ui/Positions'
 import { finalizePending } from '../hooks/useFinalizePending'
@@ -144,8 +146,8 @@ export default function Yield() {
   const [fundingAgent, setFundingAgent] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [publishStatus, setPublishStatus] = useState<string | null>(null)
-  const [revokingPlan, setRevokingPlan] = useState<string | null>(null)
   const [selectedStep, setSelectedStep] = useState<StoredDelegation | null>(null)
+  const [revokingHash, setRevokingHash] = useState<string | null>(null)
   const [redeeming, setRedeeming] = useState(false)
   const [redeemDone, setRedeemDone] = useState(false)
   const [compoundingNow, setCompoundingNow] = useState(false)
@@ -484,23 +486,22 @@ export default function Yield() {
   // Unlike deposit, the amounts aren't known until this call (see redeemCompound.ts).
 
 
-  /** Revoke every step at once. Two of three revoked leaves an agent that can still
-   *  spend the rest, so they go in one Safe transaction — one signature, or none. */
-  async function handleRevokePlan(agentAddress: Address, steps: { delegation: StoredDelegation }[]) {
+
+  async function revokeStep(step: YieldPlanStep) {
+    const hash = step.delegation.meta.delegationHash
     setPlanError(null)
-    setRevokingPlan(agentAddress)
+    setRevokingHash(hash)
     try {
-      await sdk.txs.send({ txs: buildRevokePlanTxs(steps.map((st) => st.delegation), safe.chainId) })
+      await sdk.txs.send({ txs: buildRevokeTxs(step.delegation, safe.chainId) })
       safePlans.refresh()
     } catch (err) {
-      setPlanError(err instanceof Error ? err.message : 'Failed to revoke the plan')
+      setPlanError(err instanceof Error ? err.message : 'Failed to revoke the delegation')
     } finally {
-      setRevokingPlan(null)
+      setRevokingHash(null)
     }
   }
 
   const AGENT_GAS_ETH = '0.0015'
-  const MINT_SELECTOR = '0x88316456'
 
   /** Gas for the agent, its own Safe transaction — three redeems, so more than a
    *  limit order needs, and still the loss ceiling if the plan is never redeemed. */
@@ -693,75 +694,39 @@ export default function Yield() {
         </div>
       )}
 
-        {/* Recovered from the graph, not from local storage: a reload used to lose the
-          agent address and with it any way back to a plan left half-finished. */}
-      {safePlans.plans.some((pl) => !pl.done) && (
-        <Block title="Your plans">
-          <div className="space-y-2 -mt-1">
-            {safePlans.plans.filter((pl) => !pl.done).map((pl) => {
-              const spent = pl.steps.filter((st) => st.consumed).length
-              return (
-                <div key={pl.agentAddress} className="rounded-lg bg-raised ring-1 ring-line p-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs text-ink">
-                      {pl.complete ? `Deposit ${spent}/${pl.steps.length} done` : `Indexing (${pl.steps.length}/3 steps)`}
-                    </div>
-                    <Mono className="text-[11px] text-faint">{short(pl.agentAddress)}</Mono>
-                    {/* Each step is an ordinary delegation — same detail page, same
-                        revoke, as every other mandate on this Safe. */}
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {pl.steps.map((st) => (
-                        <button
-                          key={st.delegation.meta.delegationHash}
-                          type="button"
-                          onClick={() => setSelectedStep(st.delegation)}
-                          className="text-[10px] px-2 py-0.5 rounded-md ring-1 ring-line text-dim hover:text-ink"
-                        >
-                          {st.selector === MINT_SELECTOR ? 'mint' : 'approve'}
-                          {st.consumed ? ' ✓' : ''}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {pl.complete && (
-                      <Btn kind="ghost" size="sm" onClick={() => agentSvc.adopt(pl.agentAddress)}>
-                        Resume
-                      </Btn>
-                    )}
-                    {/* Revoke makes the mandate unusable on-chain; Clear only hides an
-                        abandoned attempt. Different consequences, so different actions. */}
-                    <Btn
-                      kind="ghost"
-                      size="sm"
-                      onClick={() => void handleRevokePlan(pl.agentAddress, pl.steps)}
-                      disabled={revokingPlan === pl.agentAddress}
-                    >
-                      {revokingPlan === pl.agentAddress ? 'Revoking…' : 'Revoke'}
-                    </Btn>
-                    <Btn kind="ghost" size="sm" onClick={() => safePlans.dismiss(pl.agentAddress)}>
-                      Clear
-                    </Btn>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-          <p className="text-[11px] text-faint">
-            A plan that stopped partway is still valid — resuming skips what already landed, and nothing needs
-            re-signing.
-          </p>
-        </Block>
-      )}
-
-      {(safePositions.positions.length > 0 || safePositions.loading) && (
-        <Block title="Your positions">
-          <Positions positions={safePositions.positions} loading={safePositions.loading} detailed />
-        </Block>
-      )}
-
-      {selectedStep && (
+        {selectedStep && (
         <SubscriptionDetail d={selectedStep} onClose={() => setSelectedStep(null)} onChanged={safePlans.refresh} />
+      )}
+
+      {(safePositions.positions.length > 0 || safePlans.plans.length > 0) && (
+        <div className="mb-6 space-y-4">
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-ink">Your liquidity</h2>
+            <p className="text-dim text-xs mt-0.5">Open positions and the mandates behind them.</p>
+          </div>
+
+          {safePositions.positions.length > 0 && (
+            <Positions positions={safePositions.positions} loading={safePositions.loading} detailed />
+          )}
+
+          {/* Folded: the chain sees three mandates per deposit, the operator sees one
+              decision. The parts stay one click away. */}
+          {safePlans.plans.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {safePlans.plans.map((pl) => (
+                <PlanFolder
+                  key={pl.agentAddress}
+                  plan={pl}
+                  onOpenStep={(st) => setSelectedStep(st.delegation)}
+                  onRevokeStep={(st) => void revokeStep(st)}
+                  revokingHash={revokingHash}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="border-t border-line" />
+        </div>
       )}
 
       {pool && (

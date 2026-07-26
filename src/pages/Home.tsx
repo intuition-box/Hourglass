@@ -6,7 +6,9 @@ import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { useSafePositions } from '../hooks/useSafePositions'
-import { useSafeYieldPlans } from '../hooks/useSafeYieldPlans'
+import { useSafeYieldPlans, type YieldPlanStep } from '../hooks/useSafeYieldPlans'
+import { PlanFolder } from '../ui/PlanFolder'
+import { buildRevokeTxs } from '../lib/revoke'
 import { Positions } from '../ui/Positions'
 import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { portalAtomUrl } from '../lib/intuition'
@@ -110,6 +112,20 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   // same detail + revoke every other delegation on this Safe uses. Reuses the module
   // address this page already resolves for its status banner.
   const yieldPlans = useSafeYieldPlans(moduleAddress ?? undefined, safe.chainId)
+  const [revokingHash, setRevokingHash] = useState<string | null>(null)
+
+  async function revokeStep(step: YieldPlanStep) {
+    const hash = step.delegation.meta.delegationHash
+    setRevokingHash(hash)
+    try {
+      await sdk.txs.send({ txs: buildRevokeTxs(step.delegation, safe.chainId) })
+      yieldPlans.refresh()
+    } catch {
+      // The Safe surfaces its own rejection; nothing useful to add here.
+    } finally {
+      setRevokingHash(null)
+    }
+  }
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
   // Limit orders are one-shot; once fired on-chain, show them as Executed not Active,
   // with a link to the redemption tx. Keyed by delegationHash → explorer URL ('' = no link).
@@ -264,15 +280,15 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
           <Positions positions={positions.positions} loading={positions.loading} />
           {yieldPlans.plans.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              {yieldPlans.plans.flatMap((pl) =>
-                pl.steps.map((st) => (
-                  <SubCard
-                    key={st.delegation.meta.delegationHash}
-                    d={st.delegation}
-                    onOpen={() => setSelected(st.delegation)}
-                  />
-                )),
-              )}
+              {yieldPlans.plans.map((pl) => (
+                <PlanFolder
+                  key={pl.agentAddress}
+                  plan={pl}
+                  onOpenStep={(st) => setSelected(st.delegation)}
+                  onRevokeStep={(st) => void revokeStep(st)}
+                  revokingHash={revokingHash}
+                />
+              ))}
             </div>
           )}
         </div>
