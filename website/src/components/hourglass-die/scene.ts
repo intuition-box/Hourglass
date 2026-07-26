@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import {
   CAPACITY,
-  PIECE,
   S,
   SAND_INSET,
   SAND_SPAN,
@@ -189,7 +188,7 @@ class Hourglass {
   private readonly toneIdle: THREE.Color;
   private readonly glow: THREE.Color;
   private readonly glowIdle: THREE.Color;
-  private readonly glassMat: THREE.MeshPhysicalMaterial;
+  private readonly glass: readonly THREE.MeshPhysicalMaterial[];
   private readonly sandMat: THREE.MeshStandardMaterial;
   private readonly streamMat: THREE.MeshBasicMaterial;
   private readonly grainMat: THREE.PointsMaterial;
@@ -214,31 +213,35 @@ class Hourglass {
     this.glow = new THREE.Color(SAND[axis].glow);
     this.glowIdle = this.glow.clone().multiplyScalar(0.4);
 
-    /* The two glass pieces. Additive so they contribute their reflections and
-       nothing else — six stacked panes of ordinary transparency would fog the
-       core grey. Each is shrunk by PIECE so neighbouring pyramids meet at a
-       hairline instead of z-fighting on shared faces. */
-    this.glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0x16302e,
-      metalness: 0,
-      roughness: 0.05,
-      transparent: true,
-      opacity: 0.46,
-      blending: THREE.AdditiveBlending,
-      clearcoat: 1,
-      clearcoatRoughness: 0.03,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      envMapIntensity: 1.6,
-    });
-    const shell = pyramidGeometry(S * PIECE);
-    for (const sign of [1, -1]) {
-      const piece = new THREE.Mesh(shell, this.glassMat);
-      if (sign < 0) piece.rotation.z = Math.PI;
+    /* One glass material per piece, not one per hourglass: a shell only earns
+       its place over sand that isn't there. Over a full pyramid it adds nothing
+       but a bright rim along the edges, so each fades out as its own sand fills
+       it. Additive, because six stacked panes of ordinary transparency would fog
+       the core grey. Low clearcoat for the same reason as the fade — a hard
+       specular line reads as a border drawn around the volume. */
+    const glass = () =>
+      new THREE.MeshPhysicalMaterial({
+        color: 0x16302e,
+        metalness: 0,
+        roughness: 0.08,
+        transparent: true,
+        opacity: 0.26,
+        blending: THREE.AdditiveBlending,
+        clearcoat: 0.3,
+        clearcoatRoughness: 0.2,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        envMapIntensity: 1.1,
+      });
+    this.glass = [glass(), glass()]; // [+Y piece, -Y piece]
+    const shell = pyramidGeometry(S);
+    this.glass.forEach((mat, i) => {
+      const piece = new THREE.Mesh(shell, mat);
+      if (i === 1) piece.rotation.z = Math.PI;
       piece.renderOrder = 10;
       this.group.add(piece);
-    }
-    this.disposables.push(shell, this.glassMat);
+    });
+    this.disposables.push(shell, ...this.glass);
 
     // Sand stays opaque: transparent materials are sorted per object, and every
     // object here shares the same centre, so anything translucent would flicker.
@@ -341,7 +344,10 @@ class Hourglass {
     const active = this.gate > 0.5;
     this.sandMat.color.copy(active ? this.tone : this.toneIdle);
     this.sandMat.emissive.copy(active ? this.glow : this.glowIdle);
-    this.glassMat.opacity = active ? 0.46 : 0.28;
+    // each shell dims as its own pyramid fills, so a solid volume has no rim
+    const lit = active ? 0.26 : 0.15;
+    this.glass[0].opacity = lit * (1 - clamp(this.fillPlus * CAPACITY, 0, 1));
+    this.glass[1].opacity = lit * (1 - clamp((1 - this.fillPlus) * CAPACITY, 0, 1));
 
     const drop = lower * lowerTop;
     const run = flowing > 0.02 && inUpper > 0.001;

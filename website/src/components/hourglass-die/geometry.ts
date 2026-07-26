@@ -14,16 +14,15 @@
  */
 
 export const S = 1; // cube half-size, and so each pyramid's height
-/** Each piece stands off its neighbours, so the cube reads as six things stacked
-    together rather than one painted block. This is the groove you see along
-    every edge of the paper model. */
-export const PIECE = 0.93;
 /** Sand fills the pyramid itself, standing off the glass on every side. There are
     six volumes here, not twelve — but a hair of clearance is not enough: at 0.5%
-    the walls were within a rounding error of the glass and the shared base plane
-    was exactly coincident, which is what made the surface flicker as the camera
-    moved. 1% separates them without turning the glass into a bright rim. */
-export const SAND_INSET = 0.99;
+    the shared base plane was exactly coincident, which made the surface flicker
+    as the camera moved. It only needs to be small: a 1% gap left a slit between
+    neighbouring volumes wide enough to catch the key light and read as a white
+    line down every edge. 0.3% separates the planes and closes the slit — and the
+    pyramid's own shell has already faded to nothing by the time its sand reaches
+    the base, so there is nothing left for the sand to fight with. */
+export const SAND_INSET = 0.997;
 /** A charge is exactly one pyramid of sand: a full piece, or empty glass. */
 export const CAPACITY = 1;
 
@@ -35,8 +34,10 @@ export const smoothstep = (a: number, b: number, x: number) => {
 };
 
 /** How far out the sand reaches. Short of the pyramid's own base, so the two
-    caps never share a plane. */
-export const SAND_SPAN = S * PIECE * 0.99;
+    caps never share a plane. The six pieces themselves tile the cube exactly —
+    all the clearance in this object comes from the sand being inset, not from
+    shrinking the pyramids. */
+export const SAND_SPAN = S * 0.99;
 
 /**
  * Where the surface sits in a draining pyramid — the one whose apex points down,
