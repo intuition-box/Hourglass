@@ -140,12 +140,34 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
   const active = aimed ?? settled;
   const current = ACCESSES.find((a) => a.id === active) ?? ACCESSES[0];
 
+  /* Chips flank the die in two columns and never sit above it — a card over the
+     cube pushes the whole composition down the page. Alternating keeps the two
+     sides even however many advantages an access has. */
+  const chipSlots = (() => {
+    const columns: Record<'1' | '-1', typeof current.advantages> = { '1': [], '-1': [] };
+    // deal left first, so an odd count leaves the extra card on the side the eye
+    // reads from rather than stacking the right column three deep
+    current.advantages.forEach((adv, i) => columns[i % 2 === 0 ? '-1' : '1'].push(adv));
+    // one step for both columns: different spacings made the taller column look
+    // top-heavy even though each was centred on its own
+    const STEP = 30;
+    return ([-1, 1] as const).flatMap((side) => {
+      const column = columns[side > 0 ? '1' : '-1'];
+      return column.map((adv, j) => ({
+        adv,
+        side,
+        y: 50 + (j - (column.length - 1) / 2) * STEP,
+        order: current.advantages.indexOf(adv),
+      }));
+    });
+  })();
+
   return (
     <div className="relative z-10 flex min-w-0 flex-col">
       {children}
 
       {/* Centred: the die sits on the axis the rings radiate from. */}
-      <div className="relative mx-auto hidden w-full max-w-[1120px] min-h-[430px] md:block lg:min-h-[540px]">
+      <div className="relative mx-auto -mt-6 hidden w-full max-w-[1120px] min-h-[380px] md:block lg:-mt-10 lg:min-h-[470px]">
         {/* the scene mounts its canvas here; the chips inherit its --die-* vars */}
         <div ref={hostRef} className="absolute inset-0">
           {!live && (
@@ -165,30 +187,21 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
           {/* z-10: the scene appends its canvas last, so without it the glass
               paints over the copy */}
           <ul className="pointer-events-none absolute inset-0 z-10 hidden md:block">
-            {current.advantages.map((adv, i) => {
-              const angle = (-90 + (i * 360) / current.advantages.length) * (Math.PI / 180);
-              const cos = Math.cos(angle);
-              /* Anchored just outside the cube's footprint rather than on a true
-                 ellipse: a chip centred on the ring would sit on its edges and
-                 become unreadable. */
-              const side = cos > 0.25 ? 1 : cos < -0.25 ? -1 : 0;
-              const x = 50 + side * 24;
-              const y = 50 + Math.sin(angle) * 41;
-              return (
+            {chipSlots.map(({ adv, side, y, order }) => (
                 <li
                   key={adv.lead}
                   className="die-chip absolute w-[220px]"
                   style={{
-                    left: `${x}%`,
+                    left: `${50 + side * 24}%`,
                     top: `${y}%`,
-                    ['--chip-tx' as string]: side > 0 ? '0%' : side < 0 ? '-100%' : '-50%',
+                    ['--chip-tx' as string]: side > 0 ? '0%' : '-100%',
                     opacity: chipsIn ? 1 : 0,
-                    transitionDelay: chipsIn ? `${250 + i * 70}ms` : '0ms',
+                    transitionDelay: chipsIn ? `${250 + order * 70}ms` : '0ms',
                   }}
                 >
                   <span
                     className="die-chip-bob block rounded-xl border border-fd-border bg-[color:var(--color-panel)]/80 px-4 py-3 backdrop-blur-sm"
-                    style={{ animationDelay: `${i * -1.3}s` }}
+                    style={{ animationDelay: `${order * -1.3}s` }}
                   >
                     {adv.brand &&
                       (adv.logo ? (
@@ -211,8 +224,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
                     </span>
                   </span>
                 </li>
-              );
-            })}
+            ))}
           </ul>
         </div>
       </div>

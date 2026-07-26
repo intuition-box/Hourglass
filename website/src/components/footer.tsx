@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Logo } from '@/components/logo';
-import { analyticsRoute, blogRoute, docsRoute, githubUrl, redeemRoute, twitterUrl, umbrellaUrl } from '@/lib/shared';
+import { analyticsRoute, docsRoute, githubUrl, redeemRoute, twitterUrl, umbrellaUrl } from '@/lib/shared';
 
 export function Footer() {
   return (
@@ -19,8 +19,8 @@ export function Footer() {
             <span className="text-fd-foreground font-medium">Product</span>
             <Link href={redeemRoute} className="text-fd-muted-foreground hover:text-fd-foreground">Claim a payment</Link>
             <Link href={analyticsRoute} className="text-fd-muted-foreground hover:text-fd-foreground">Analytics</Link>
+            {/* Blog is unlinked while it has nothing in it; /blog still renders. */}
             <Link href={docsRoute} className="text-fd-muted-foreground hover:text-fd-foreground">Docs</Link>
-            <Link href={blogRoute} className="text-fd-muted-foreground hover:text-fd-foreground">Blog</Link>
           </div>
           <div className="flex flex-col gap-2">
             <span className="text-fd-foreground font-medium">Community</span>
