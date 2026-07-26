@@ -47,14 +47,15 @@ const CYCLE: AxisIndex[] = [1, 0, 2];
 /**
  * One value per axis, from the mark's palette: Y light, X mid, Z deep.
  *
- * Not the mark's literal three hexes. Lighting compresses value differences —
- * at the mark's spacing the three faces shade into one green — so the ends are
- * pushed apart until the axes stay legible under shading.
+ * The mark's literal three hexes. Getting them to survive to the screen takes
+ * two things beyond setting them: the sand opts out of tone mapping, because
+ * ACES desaturates saturated greens hard, and the lights are tuned so a lit face
+ * lands just above its albedo. Brighter than the mark is fine; duller is not.
  */
 const SAND = [
-  { tone: 0x3fd0a2, glow: 0x0d4d3a },
-  { tone: 0xc4ffe9, glow: 0x1a7a5c },
-  { tone: 0x0e6349, glow: 0x062a20 },
+  { tone: 0x35c396, glow: 0x0a3b2d },
+  { tone: 0x7ff2cd, glow: 0x14654c },
+  { tone: 0x126b51, glow: 0x051f18 },
 ] as const;
 
 const RAD = 40;
@@ -191,7 +192,7 @@ class Hourglass {
   private readonly glow: THREE.Color;
   private readonly glowIdle: THREE.Color;
   private readonly glass: readonly THREE.MeshPhysicalMaterial[];
-  private readonly sandMat: THREE.MeshStandardMaterial;
+  private readonly sandMat: THREE.MeshBasicMaterial;
   private readonly streamMat: THREE.MeshBasicMaterial;
   private readonly grainMat: THREE.PointsMaterial;
   private readonly plus: PyramidSand;
@@ -247,12 +248,14 @@ class Hourglass {
 
     // Sand stays opaque: transparent materials are sorted per object, and every
     // object here shares the same centre, so anything translucent would flicker.
-    this.sandMat = new THREE.MeshStandardMaterial({
+    /* Unlit on purpose. A lit pyramid shades its walls, its base and its
+       opposite twin differently, so one hourglass came out as several greens and
+       the cube as six colours instead of three. Flat means one hourglass is one
+       colour and the three visible faces are the mark's three. Tone mapping is
+       off for the same reason: ACES desaturates saturated greens hard. */
+    this.sandMat = new THREE.MeshBasicMaterial({
       color: this.tone,
-      roughness: 0.95,
-      metalness: 0,
-      envMapIntensity: 0.55,
-      emissive: this.glow.clone(),
+      toneMapped: false,
       side: THREE.DoubleSide,
     });
     this.plus = new PyramidSand(this.sandMat);
@@ -346,7 +349,6 @@ class Hourglass {
     // not missing
     const active = this.gate > 0.5;
     this.sandMat.color.copy(active ? this.tone : this.toneIdle);
-    this.sandMat.emissive.copy(active ? this.glow : this.glowIdle);
     // each shell dims as its own pyramid fills, so a solid volume has no rim
     const lit = active ? 0.26 : 0.15;
     this.glass[0].opacity = lit * (1 - clamp(this.fillPlus * held, 0, 1));
@@ -457,11 +459,11 @@ export class HourglassDie {
     this.envMap = this.buildEnvironment();
     this.scene.environment = this.envMap;
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.08));
-    const key = new THREE.DirectionalLight(0xffffff, 0.85);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.44));
+    const key = new THREE.DirectionalLight(0xffffff, 0.62);
     key.position.set(3, 6, 4);
     this.scene.add(key);
-    const rim = new THREE.DirectionalLight(0x58e6b8, 0.45);
+    const rim = new THREE.DirectionalLight(0xcfeaff, 0.2);
     rim.position.set(-4, -1, -3);
     this.scene.add(rim);
 
