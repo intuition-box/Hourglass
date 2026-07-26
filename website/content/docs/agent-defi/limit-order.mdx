@@ -1,0 +1,98 @@
+---
+title: Buy the dip
+description: A single price-triggered swap — the max spend and the minimum received are both enforced on-chain.
+---
+
+**Buy the dip** is a limit order: one delegation that lets an agent make a
+**single** swap, and only when the market reaches the price you set. The Safe
+signs once; the agent watches the price and fills the order when it clears.
+
+## How a price becomes an on-chain bound
+
+There is no price oracle in the mandate. The trigger is expressed as a **minimum
+amount received**, which is equivalent: a lower price returns *more* of the bought
+token for the same spend, so "receive at least X" is exactly "only fill at or below
+this price". The enforcer checks the Safe's balances before and after the swap.
+
+## The mandate
+
+One delegation, four caveats:
+
+| Caveat | What it bounds |
+|---|---|
+| `functionCall` scope | `execute(bytes,bytes[],uint256)` on the Uniswap **Universal Router** — the agent can call nothing else |
+| `erc20BalanceChange` **Decrease** on the funding token | the **maximum spend** — the anti-drain cap |
+| `erc20BalanceChange` **Increase** on the target token | the **minimum received** — the price trigger |
+| `limitedCalls(1)` | the order fires **exactly once** |
+
+Both balance changes are measured on the **Safe**, which is what spends and what
+receives. The salt is the hash of the terms — router, agent, both tokens, max
+spend, min received — so the signature is bound to that exact order.
+
+This rail bounds the **intent, not the means**: a Uniswap route (path, min-out,
+deadline) is only known at execution time and cannot be signed in advance. The
+agent composes whatever swap it likes; it simply cannot make the Safe lose more
+than the cap or receive less than the floor.
+
+## What the agent cannot do
+
+- Spend more than the max spend — the Decrease caveat reverts.
+- Accept a worse price than the trigger — the Increase caveat reverts.
+- Call any contract other than the Universal Router, or any other method on it —
+  the `functionCall` scope reverts.
+- Fill twice — `limitedCalls(1)`.
+- Move funds out of the Safe. The swap runs **as the Safe**; the bought token lands
+  back in the Safe.
+
+## One-time setup: enable trading
+
+The Universal Router pulls the funding token through **Permit2**, so two allowances
+must exist on the Safe before any swap can settle:
+
+1. `token.approve(Permit2, ∞)` — lets Permit2 move the token;
+2. `Permit2.approve(token, router, ∞, ∞)` — lets the router pull through Permit2.
+
+Both are plain calls with no signature, so the Safe batches them into a **single
+transaction**. The app surfaces this as **Enable trading** and checks the state
+before letting you sign. It is one-time per funding token, independent of any
+individual order — without it, the router reverts with Permit2 `AllowanceExpired`.
+
+## Routing: CLASSIC only
+
+<Callout type="warn">
+The agent must request **CLASSIC** routing from the Uniswap Trading API, not
+`BEST_PRICE`. CLASSIC returns a router `execute(...)` transaction, which is what the
+delegation can redeem. `BEST_PRICE` may return a gasless UniswapX order — an
+off-chain intent with no on-chain transaction, so there is nothing to redeem.
+</Callout>
+
+## Tokens
+
+Both the funding token and the token you buy can be chosen from a curated
+whitelist, or entered as a custom address (the app reads its decimals and symbol
+on-chain). A custom address is not validated for anything beyond being a readable
+ERC-20 — check it yourself.
+
+## Agent gas
+
+Redeeming is a real transaction, so the agent wallet needs native ETH. One redeem
+costs roughly **440k gas on Base**; the app offers to fund the agent with a small
+amount that covers it with room.
+
+<Callout type="info">
+If the order never fills, that gas top-up is the loss ceiling — there is no return
+path for the residue in the agent wallet today. Fund it with the redeem cost, not
+with a balance.
+</Callout>
+
+## Chains
+
+Ethereum (1) and Base (8453) — the chains where the Universal Router address is
+wired and the liquidity lives. Testnets are deliberately not offered for this rail.
+
+## Stopping
+
+Disable the delegation from the Safe (a multisig action) and the order can never
+fill. See [Revoke](/docs/guides/revoke). An unfilled order also expires on its own
+terms in the sense that it simply never clears — but revoking is what actually
+removes the authority.

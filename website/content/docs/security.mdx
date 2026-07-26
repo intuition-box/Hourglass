@@ -44,11 +44,47 @@ lifetime ceiling**. The protections that remain are:
 Set the rate to the real obligation and treat the funded balance in the Safe as
 the true exposure, since the caveat ceiling is intentionally not binding.
 
+## Agent mandates: bounded action, not bounded outcome
+
+An [Agent DeFi](/docs/agent-defi) mandate delegates a *market* action to an agent,
+which changes what the caveats can promise.
+
+**Enforced on-chain.** The call surface (which contract, which method), the exact
+calldata where it is knowable, the maximum spend, the minimum received, who may
+redeem, how many times, and for how long. A buggy, offline, or compromised agent
+cannot overspend, call another contract, redeem twice, or move funds out of the
+Safe. Actions run **as the Safe** and the proceeds return to the Safe.
+
+**Not enforced.** That the strategy is profitable, or that the agent acts on time —
+or at all. The chain guarantees no cadence. A mandate bounds *operational* risk;
+market risk and agent punctuality stay with you.
+
+Two specific limits worth reading before signing:
+
+- The [compound mandate](/docs/agent-defi/liquidity#auto-compound-optional) is not
+  pinned to a single position and does not cap the amounts it reinvests. It cannot
+  withdraw principal — `decreaseLiquidity` and `burn` are out of scope — but it is
+  a broader authority than the deposit plan.
+- The [hosted agent](/docs/agent-defi/agents#hosted) means **HourGlass holds the
+  agent's key**. Your treasury stays bounded by the caveats, but the agent wallet
+  itself is not protected — fund it for one redeem and no more. Run the agent
+  yourself if you need the non-custodial property end to end.
+
+## Aqua is bounded by an allowance, not a caveat
+
+The [Aqua](/docs/aqua) rail is not a delegation. There is no caveat and nothing to
+`disableDelegation`; a shipped strategy is backed by a standing **ERC-20 allowance**
+from the Safe, and any taker may swap against it. That allowance is shared across
+every strategy the Safe has shipped over that token, and the app leaves 10× headroom
+by default so the strategy keeps filling. Treat the allowance as the exposure, and
+dock a strategy to release its share.
+
 ## Non-custodial
 
 Funds never leave the payer's Safe until a charge executes, and a charge can only
 move tokens within the caveat's bound. HourGlass holds no keys to the payer's
-funds.
+funds. The one exception is the **hosted agent**, which holds a gas-only key — see
+above.
 
 ## Discovery adds no trust
 
@@ -86,9 +122,10 @@ the signature covers it and it cannot be swapped after signing.
 The full enforcer suite — 37 instances — is deployed on Ethereum mainnet and Base
 under the CREATE2 salt `bytes32("OURGLASS")`, each with verified source on Etherscan
 and Basescan. Because the address derives from the salt and the bytecode alone, a
-given enforcer sits at the same address on both chains. Three of them carry the
-caveats HourGlass delegations actually use today; the rest exist so a future
-delegation shape needs no new deployment. Every address is listed in
+given enforcer sits at the same address on both chains. Ten of them carry the
+caveats HourGlass delegations actually use today — three for the payment rails, the
+rest for the [Agent DeFi](/docs/agent-defi) mandates — and the remainder exist so a
+future delegation shape needs no new deployment. Every address is listed in
 [Deployments](/docs/deployments), along with how to recompute it and check the
 bytecode yourself.
 

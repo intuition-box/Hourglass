@@ -1,0 +1,118 @@
+---
+title: Aqua
+description: Provide liquidity to 1inch Aqua without moving funds out of the Safe — a virtual balance backed by an allowance.
+icon: Waves
+---
+
+**Aqua** is 1inch's shared liquidity layer. The HourGlass Aqua tab lets a Safe
+provide liquidity to it **without moving any funds**: you ship a strategy — a token
+pair, an amount per leg, and a fee tier — and Aqua records it as a *virtual
+balance* backed by an ERC-20 allowance. The tokens stay in the Safe until a taker
+actually swaps against you.
+
+<Callout type="warn">
+**A shipped strategy is not tradable yet.** Orders only become active once
+submitted to the 1inch API, which requires KYB — out of scope here. Until then the
+position earns nothing, and docking it costs only gas. Everything below describes a
+rail that ships and docks correctly on-chain, not one that is currently earning.
+</Callout>
+
+## How it differs from everything else in HourGlass
+
+This rail does **not** use a delegation, a caveat, or an agent. There is no mandate
+to sign and nothing to revoke with `disableDelegation`. Shipping and docking are
+ordinary Safe transactions sent by the Safe's own signers.
+
+| | Payments & Agent DeFi | Aqua |
+|---|---|---|
+| Authority | an EIP-712 delegation | a direct Safe transaction |
+| Bound | an on-chain caveat | an ERC-20 allowance |
+| Third party acting for you | a receiver or an agent | any taker who swaps |
+| Stopping it | `disableDelegation` | dock the strategy / reduce the allowance |
+
+What bounds your exposure here is the **allowance**, not a caveat. That is a
+weaker and more familiar guarantee — the same one every ERC-20 approval gives you
+— and it is worth being explicit about.
+
+## Shipping a strategy
+
+You choose two tokens the Safe holds, an amount for each leg, and a fee tier
+(0.05%, 0.30%, or 1.00% — mirroring the familiar Uniswap v3 tiers). The app builds
+a small **SwapVM program** — a constant-product market with a deadline, a fee, and
+a salt — and sends one batched Safe transaction: approve each leg, then `ship`.
+
+### Shipping more than the Safe holds is allowed
+
+This is deliberate, not a validation gap. Aqua prices against the *virtual* balance
+and pulls the real tokens from the Safe only at swap time. Shipping a larger size
+quotes deeper liquidity and therefore tighter prices; it only reverts on a fill big
+enough to outrun the actual wallet balance. Meanwhile the fee on every swap is
+pushed straight into the Safe, so the real balance grows toward the shipped size on
+its own. The app flags the condition rather than blocking it.
+
+## The allowance is shared, and it only falls
+
+This is the part that surprises people, so it drives most of the page's behaviour.
+
+An ERC-20 allowance is a **single value per (owner, spender)** — one Safe holds one
+allowance to Aqua, shared by *every* strategy it has shipped over that token. It
+follows that:
+
+- **Shipping adds** to the existing allowance rather than overwriting it. An
+  `approve(amount)` would silently un-back every strategy already live over that
+  token.
+- **Docking releases only that strategy's share**, never revoking to zero, which
+  would un-back the others.
+- **Coverage is computed per token** against the summed demand of all active
+  strategies — not one strategy at a time.
+
+An allowance is also consumed by a token's **gross outflow**, not its net flow: a
+swap spends the allowance of the leg it pulls out, and tokens arriving from swaps —
+fees included — land *outside* the approval entirely. In a two-way market both legs
+drain even while the balances look steady.
+
+### Headroom
+
+Because of that, an allowance set to exactly the shipped size runs out after roughly
+one turnover and the strategy stops filling. The app therefore leaves **10× headroom
+by default**, buying that many turnovers of unattended operation while keeping the
+exposure bounded and legible — which `type(uint256).max` would not. You can turn it
+off for an exact-size approval.
+
+**Top-up** is a first-class action for this reason: every pull spends allowance, so
+maintenance is expected rather than exceptional.
+
+## Docking is permanent for that strategy
+
+`ship` requires an unused strategy hash, and `dock` writes a tombstone into it. So
+**a docked strategy's hash is burned forever** — re-shipping the identical
+parameters reverts with `StrategiesMustBeImmutable`, permanently.
+
+That is why every strategy carries a **salt**: a no-op instruction whose only job is
+to perturb the program bytes, and therefore the hash, so the same pair-amount-fee
+combination can be shipped again after being docked.
+
+## Base only, deliberately
+
+Aqua and the SwapVM router sit at the same address on a dozen mainnets, but
+HourGlass wires **Base (8453) only**.
+
+<Callout type="info">
+The reason is the opcode encoding. SwapVM opcodes are **positions in a function
+table**, not a stable enum, and they have already shifted at least once between
+builds — orders shipped on Base in late 2025 use a different table and are not
+executable. The table HourGlass encodes against was read from the *deployed,
+verified* source on Base and confirmed by execution, never taken from the upstream
+repository. A chain running a different build would silently accept a program that
+ships fine and then reverts at swap time.
+</Callout>
+
+Adding a chain requires re-running the encoding spike against it first. Do not
+assume the addresses being identical means the build is.
+
+## Stopping
+
+**Dock** the strategy: it removes the virtual balance and releases that strategy's
+share of the allowance. The tokens never left the Safe, so there is nothing to
+withdraw — docking simply stops you from being a counterparty. You can also reduce
+the allowance directly, but mind that it is shared with your other live strategies.

@@ -30,6 +30,10 @@ can happen at any cadence without losing value.
 
 ## Gas
 
-Charges can be sent directly by the receiver (the receiver pays gas) or routed
-gaslessly through a relayer that is reimbursed in the token. Either way, the caveat
-bound is what protects the payer.
+Every charge is a **direct transaction** sent by the redeeming party, who pays the
+gas in the chain's native token. There is no relayer, paymaster, or gas-abstraction
+path in HourGlass — redeeming means holding a funded wallet on the chain the
+agreement lives on.
+
+Signing is a different matter: creating an agreement costs the payer no gas, since
+it is an off-chain EIP-712 signature. Only redeeming and revoking touch the chain.

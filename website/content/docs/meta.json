@@ -1,4 +1,4 @@
 {
   "title": "Documentation",
-  "pages": ["index", "concepts", "guides", "security", "analytics", "deployments"]
+  "pages": ["index", "concepts", "guides", "agent-defi", "aqua", "security", "analytics", "deployments"]
 }

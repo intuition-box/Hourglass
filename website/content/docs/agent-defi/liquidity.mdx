@@ -1,0 +1,115 @@
+---
+title: Provide liquidity
+description: Three single-use delegations that let an agent open one Uniswap v3 position — and an optional mandate that compounds its fees.
+---
+
+**Provide liquidity** puts idle treasury into a Uniswap v3 pool. The Safe picks the
+pool and the amounts, signs, and an agent opens the position on the Safe's behalf.
+The position is minted **to the Safe** — the agent never owns it.
+
+## The deposit plan
+
+Opening a v3 position is three calls: approve each token to the position manager,
+then `mint`. HourGlass signs **one single-use delegation per call**, in that order:
+
+| # | Call | Target |
+|---|---|---|
+| 1 | `approve(address,uint256)` | token0 |
+| 2 | `approve(address,uint256)` | token1 |
+| 3 | `mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))` | Uniswap v3 `NonfungiblePositionManager` |
+
+So the operator signs **three** times. Each signature is a separate Safe action; the
+app paces them on your click rather than firing the next one automatically, which
+would race the Safe confirmation screen.
+
+## What bounds each delegation
+
+Every call is known in full at signing time — the pool, the tick range, the exact
+amounts — so this rail pins the calldata **byte for byte** rather than bounding an
+intent. Each of the three delegations carries:
+
+| Caveat | What it fixes |
+|---|---|
+| `functionCall` scope | the exact target contract and the single method selector |
+| `exactExecution` | the exact target, value, **and calldata** — no argument can be changed |
+| `limitedCalls(1)` | the call can be redeemed **once** |
+| `redeemer` | only the named agent wallet may redeem it |
+| `timestamp` | valid from signing for **one hour**, then it expires |
+
+The salt is `keccak256(callData)`, binding each signature to its exact action —
+the same `salt = keccak256(terms)` convention used everywhere in HourGlass.
+
+The consequence is that the agent has **no discretion at all** on this rail: not
+over the target, the method, the arguments, or the amounts. Its only choice is
+whether and when to submit, within the hour. That is what makes it safe to run
+unattended.
+
+<Callout type="info">
+The one-hour deadline is deliberate: a signed delegation grants a real permission,
+so the window it stays redeemable is kept short rather than open-ended. If it
+expires before the agent runs, nothing is lost — re-sign the plan.
+</Callout>
+
+## Auto-compound (optional)
+
+A position earns fees that sit uncollected. The optional **compound mandate** is a
+standing, repeatable delegation that lets the agent harvest those fees and reinvest
+them into the same position.
+
+Its scope is the Uniswap v3 position manager, restricted to two methods:
+
+- `collect(...)` — harvest the accrued fees;
+- `increaseLiquidity(...)` — add them back to the position.
+
+**`decreaseLiquidity` and `burn` are not in scope**, so the agent cannot withdraw
+the principal. It can only compound.
+
+Unlike the deposit plan, a compound's amounts are unknown until run time, so this
+mandate bounds the **call surface** rather than pinning the bytes — the same
+means-versus-intent split the [limit order](/docs/agent-defi/limit-order) uses.
+
+Two modes:
+
+- **Agent** — a gas-aware gate decides when compounding is worth the transaction cost.
+- **Manual** — a fixed interval in days, carried in the salt-verifiable terms so the
+  agent needs no out-of-band configuration.
+
+### Setup it requires
+
+One-time, from the Safe: a standing ERC-20 approval to the position manager for both
+tokens, so `increaseLiquidity` can pull the collected fees.
+
+### Honest limits
+
+These are real and worth understanding before signing a compound mandate:
+
+- **The position is not pinned.** The `tokenId` does not exist at signing time — the
+  agent mints it afterwards — so the mandate applies to **any** position the Safe
+  holds in that position manager. Pinning it to one position would need a second
+  signature after the mint.
+- **`increaseLiquidity` amounts are not capped.** The agent could add more of the
+  Safe's token balance to the position than just the harvested fees. That is
+  over-allocation into the Safe's *own* LP position, not theft — the funds stay in a
+  position the Safe owns — but it is not bounded today.
+- **`collect`'s recipient is not pinned.** Constraining it via calldata bounds would
+  also constrain `increaseLiquidity`'s bytes at the same offset.
+
+<Callout type="warn">
+The compound mandate is a broader authority than the deposit plan. Sign it only if
+you accept that it applies to every position the Safe holds in that position
+manager, and revoke it when the strategy ends.
+</Callout>
+
+## Chains
+
+Base (8453) and Base Sepolia (84532), where the Uniswap v3 position manager is
+wired. The APY estimate shown in the app comes from the Uniswap v3 subgraph, which
+exists for Base only — on Base Sepolia the estimate is simply absent rather than
+guessed.
+
+## Stopping
+
+Revoke any of the delegations (`disableDelegation`) and the corresponding redeem
+reverts. Revoking the compound mandate stops the harvesting; the position itself
+stays in the Safe, which owns it outright and can manage it directly through
+Uniswap at any time.

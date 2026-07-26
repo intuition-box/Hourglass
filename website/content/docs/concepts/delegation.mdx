@@ -29,8 +29,13 @@ execute. The framework checks every **caveat** before allowing the transfer:
   caveat — a per-period cap.
 - A **stream** carries the [`erc20Streaming`](/docs/concepts/streams) caveat — a
   linearly accruing balance.
+- An [**agent mandate**](/docs/agent-defi) carries a combination instead — a
+  `functionCall` scope plus bounds on the calldata, the balance change, the
+  redeemer, and the number of redemptions.
 
-The caveat is the only on-chain enforcement. HourGlass deploys no custom enforcer.
+The caveat is the only on-chain enforcement. HourGlass deploys no custom enforcer —
+its instances of MetaMask's enforcers are unmodified bytecode at its own addresses,
+which is what makes a charge attributable (see [Deployments](/docs/deployments)).
 
 ## Revocation
 
