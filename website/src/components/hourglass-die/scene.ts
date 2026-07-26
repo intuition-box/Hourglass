@@ -179,6 +179,8 @@ class Hourglass {
   readonly group = new THREE.Group();
   /** Fraction of the sand charge sitting in the +Y pyramid. */
   fillPlus = 1;
+  /** 0 until this axis is first rolled to: an hourglass arrives with its turn. */
+  charge = 0;
   /** +1 when local +Y points straight down. */
   gravity = -1;
   /** How much of the flow rate gravity allows right now. */
@@ -330,12 +332,13 @@ class Hourglass {
     /* Upper pyramid drains into its own apex — the funnel already points the
        right way — so its sand is a pyramid growing from the neck. The lower one
        stacks on its base, so its sand is a frustum climbing toward the neck. */
-    const upperTop = drainLevel(inUpper * CAPACITY);
-    const lowerTop = heapLevel(inLower * CAPACITY);
+    const held = CAPACITY * this.charge;
+    const upperTop = drainLevel(inUpper * held);
+    const lowerTop = heapLevel(inLower * held);
     const upper = lower > 0 ? this.minus : this.plus;
     const lowerSand = lower > 0 ? this.plus : this.minus;
-    upper.mesh.visible = inUpper * CAPACITY > 0.002;
-    lowerSand.mesh.visible = inLower * CAPACITY > 0.002;
+    upper.mesh.visible = inUpper * held > 0.002;
+    lowerSand.mesh.visible = inLower * held > 0.002;
     if (upper.mesh.visible) upper.update(-lower, 0, upperTop);
     if (lowerSand.mesh.visible) lowerSand.update(lower, SAND_SPAN, lowerTop);
 
@@ -346,8 +349,8 @@ class Hourglass {
     this.sandMat.emissive.copy(active ? this.glow : this.glowIdle);
     // each shell dims as its own pyramid fills, so a solid volume has no rim
     const lit = active ? 0.26 : 0.15;
-    this.glass[0].opacity = lit * (1 - clamp(this.fillPlus * CAPACITY, 0, 1));
-    this.glass[1].opacity = lit * (1 - clamp((1 - this.fillPlus) * CAPACITY, 0, 1));
+    this.glass[0].opacity = lit * (1 - clamp(this.fillPlus * held, 0, 1));
+    this.glass[1].opacity = lit * (1 - clamp((1 - this.fillPlus) * held, 0, 1));
 
     const drop = lower * lowerTop;
     const run = flowing > 0.02 && inUpper > 0.001;
@@ -474,8 +477,11 @@ export class HourglassDie {
     container.addEventListener('pointermove', this.handlePointer);
     container.addEventListener('pointerleave', this.handlePointerLeave);
 
-    // Start face-down on Y with every charge in its +end bulb, which the identity
-    // orientation puts on top — so the Y hourglass is already running.
+    /* Start with one hourglass only. Y is face-down with its charge in the +end
+       bulb, which the identity orientation puts on top, so it is already
+       running; the other two axes are empty glass until the die turns to them.
+       It opens on a single running glass rather than three full faces. */
+    this.glasses[1].charge = 1;
     this.render(0);
     this.onSettle?.(1);
   }
@@ -615,6 +621,7 @@ export class HourglassDie {
   private chooseSpin(): void {
     const aim = new THREE.Vector3();
     for (let i = 0; i < 3; i++) {
+      if (this.glasses[i].charge === 0) continue; // nothing to see past either way
       scratch.copy(AXES[i]).applyQuaternion(this.die.quaternion);
       aim.addScaledVector(scratch, this.glasses[i].fillPlus < 0.5 ? 1 : -1);
     }
@@ -628,6 +635,9 @@ export class HourglassDie {
   }
 
   private startRoll(axis: AxisIndex): void {
+    // An hourglass is charged the moment the die turns toward it, so the sand
+    // arrives under cover of the tumble rather than popping into a still frame.
+    this.glasses[axis].charge = 1;
     // Land with the fuller bulb on top, so the hourglass always has something to run.
     const sgn = this.glasses[axis].fillPlus >= 0.5 ? -1 : 1;
     /* Shortest way there: rotate from where that axis currently points to down,
