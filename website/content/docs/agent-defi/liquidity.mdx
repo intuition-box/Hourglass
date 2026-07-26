@@ -18,9 +18,11 @@ then `mint`. HourGlass signs **one single-use delegation per call**, in that ord
 | 2 | `approve(address,uint256)` | token1 |
 | 3 | `mint((address,address,uint24,int24,int24,uint256,uint256,uint256,uint256,address,uint256))` | Uniswap v3 `NonfungiblePositionManager` |
 
-So the operator signs **three** times. Each signature is a separate Safe action; the
-app paces them on your click rather than firing the next one automatically, which
-would race the Safe confirmation screen.
+So the operator signs **three** times — or **four** with
+[auto-compound](#auto-compound-optional) enabled, which adds its mandate to the same
+run. Each signature is a separate Safe action; the app paces them on your click
+rather than firing the next one automatically, which would race the Safe
+confirmation screen.
 
 ## What bounds each delegation
 
@@ -68,6 +70,10 @@ Unlike the deposit plan, a compound's amounts are unknown until run time, so thi
 mandate bounds the **call surface** rather than pinning the bytes — the same
 means-versus-intent split the [limit order](/docs/agent-defi/limit-order) uses.
 
+It carries a `redeemer` caveat locking it to the agent, and — unlike the three
+deposit delegations — **no timestamp caveat**. It is a standing authority with no
+expiry, live until you revoke it.
+
 Two modes:
 
 - **Agent** — a gas-aware gate decides when compounding is worth the transaction cost.
@@ -107,9 +113,32 @@ wired. The APY estimate shown in the app comes from the Uniswap v3 subgraph, whi
 exists for Base only — on Base Sepolia the estimate is simply absent rather than
 guessed.
 
-## Stopping
+## Following and stopping a plan
 
-Revoke any of the delegations (`disableDelegation`) and the corresponding redeem
-reverts. Revoking the compound mandate stops the harvesting; the position itself
-stays in the Safe, which owns it outright and can manage it directly through
-Uniswap at any time.
+A signed plan appears on **Overview** — under *Agentic DeFi strategies*, kept
+separate from *Operations* (subscriptions, streams, orders) — and on the Provide
+liquidity tab, as one card that folds open to show its three delegations and the
+state of each.
+
+Revoking is per step: disabling a delegation (`disableDelegation`) makes that step's
+redeem revert.
+
+<Callout type="warn">
+A plan is **three** delegations, so revoking one is not revoking the plan. If you
+stop a plan after the approvals have been redeemed but before the mint, the
+remaining step is still live and the agent can still spend it. Revoke **every**
+unconsumed step. Revoking a step that was already consumed is harmless — a
+`disableDelegation` on a spent delegation is a no-op.
+</Callout>
+
+An abandoned plan can also be **cleared**, which only hides it locally. Clearing is
+not revoking: the mandate stays signed and redeemable until the deadline passes or
+you disable it.
+
+The delegations expire on their own an hour after signing, so an untouched plan
+stops being redeemable by itself.
+
+Revoking the compound mandate stops the harvesting. It has no deadline — it is a
+standing authority, so it stays live until you disable it. The position itself stays
+in the Safe, which owns it outright and can manage it directly through Uniswap at
+any time.

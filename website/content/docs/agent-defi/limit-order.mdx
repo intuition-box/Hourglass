@@ -73,6 +73,21 @@ whitelist, or entered as a custom address (the app reads its decimals and symbol
 on-chain). A custom address is not validated for anything beyond being a readable
 ERC-20 — check it yourself.
 
+## Authoring an order in plain language
+
+A **mandate assistant** backend exists that turns a plain-language order — "buy 100
+USDC of WETH if it drops 5%" — into the parameters of a limit-order mandate, which
+the operator then confirms and signs unchanged.
+
+It is **not wired into the app today**: the service is written but not deployed
+alongside the publisher and agent service.
+
+The design principle behind it holds regardless, and is worth stating: the model is
+deliberately kept **out of the execution path**. The `erc20BalanceChange` Increase
+bound *is* the price trigger, and it is enforced by the chain. Letting a model decide
+when the price is right would trade a cryptographic guarantee for a probabilistic
+one. A model may help you *author* an order; it never decides whether one clears.
+
 ## Agent gas
 
 Redeeming is a real transaction, so the agent wallet needs native ETH. One redeem

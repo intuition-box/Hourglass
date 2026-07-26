@@ -129,6 +129,15 @@ Base Sepolia and Ethereum Sepolia use MetaMask's canonical enforcer deployments.
 HourGlass-owned instance exists there, so charges on those chains are not
 attributable by emitter address.
 
+## The provenance page
+
+The app also serves a static **provenance page** at `/safe-app/verify`. It lists the
+canonical, audited MetaMask addresses the app builds on, per chain, with links to
+the Delegation Framework repository and its Consensys Diligence audits.
+
+It makes no chain calls and needs no wallet, so it can be hosted anywhere and stays
+readable even if the rest of the app is down.
+
 ## Verifying this yourself
 
 The addresses in this page are the ones the app uses, held in
