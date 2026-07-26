@@ -22,20 +22,17 @@ export default function Home() {
           Delegate the flow, not the funds.
         </h1>
 
-        <p className="relative z-10 mt-5 text-[20px] text-fd-muted-foreground">
-          No black box. Just glass.
-        </p>
-
         <AccessShowcase>
           {/* The mark's own mint, so the one CTA belongs to the same object as
               the die and the logo rather than to the template it came from. */}
-          <div className="mt-6 flex flex-wrap items-center gap-[18px]">
+          <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-4">
+            <p className="text-[20px] text-fd-muted-foreground">No black box. Just glass.</p>
             <Link
               href={safeAppGuideRoute}
               className="group inline-flex items-stretch gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-base)]"
             >
               <span className="inline-flex h-12 items-center rounded-full bg-[#7ff2cd] px-7 text-base font-semibold text-[#06231b] transition-opacity group-hover:opacity-90">
-                Add hourglass.box safe app
+                Add Hourglass to your Safe
               </span>
               <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#7ff2cd] text-[#06231b] transition-[border-radius,opacity] duration-200 group-hover:rounded-full group-hover:opacity-90">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
