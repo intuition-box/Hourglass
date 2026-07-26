@@ -397,8 +397,7 @@ export class HourglassDie {
   private sampled = 0;
   private slow = 0;
 
-  private readonly aim = new THREE.Vector3();
-  private readonly camBase = new THREE.Vector3(5.2, 4.6, 5.2);
+  private orbit = Math.PI * 0.28;
   private pointerX = 0;
   private pointerY = 0;
   private aimX = 0;
@@ -674,38 +673,24 @@ export class HourglassDie {
       this.startRoll(CYCLE[(CYCLE.indexOf(active.axis) + 1) % CYCLE.length]);
     }
 
-    /* The camera doesn't orbit — it takes the side where the emptiest pyramids
-       are. A full pyramid shows the lens its base, an entire cube face of solid
-       sand; an empty one is glass you can see the others through. So aim at the
-       octant made of each axis's emptier end, and let the shot re-frame itself
-       when the die rolls or a glass drains. */
-    this.aim.set(0, 0, 0);
-    for (let i = 0; i < 3; i++) {
-      scratch.copy(AXES[i]).applyQuaternion(this.die.quaternion);
-      this.aim.addScaledVector(scratch, this.glasses[i].fillPlus < 0.5 ? 1 : -1);
-    }
-    if (this.aim.lengthSq() < 1e-6) this.aim.set(1, 0.8, 1);
-    this.aim.normalize();
-    // never from underneath: the die is standing on a face, not floating
-    if (this.aim.y < 0.34) {
-      this.aim.y = 0.34;
-      this.aim.normalize();
-    }
-
+    // Camera orbits the die rather than the die spinning: the face that landed
+    // down has to stay down, or the metaphor breaks.
+    if (!this.reducedMotion) this.orbit += dt * 0.12;
     this.pointerX += (this.aimX - this.pointerX) * Math.min(1, dt * 3);
     this.pointerY += (this.aimY - this.pointerY) * Math.min(1, dt * 3);
-    // exponential ease so a re-frame glides instead of cutting
-    this.camBase.lerp(this.aim.multiplyScalar(8.6), 1 - Math.exp(-dt * 1.8));
-    this.camera.position.copy(this.camBase);
-    this.camera.position.x += this.pointerX * 0.35;
-    this.camera.position.y -= this.pointerY * 0.3;
+    const radius = 8.6;
+    this.camera.position.set(
+      Math.sin(this.orbit) * radius + this.pointerX * 0.35,
+      2.5 - this.pointerY * 0.3,
+      Math.cos(this.orbit) * radius,
+    );
     this.camera.lookAt(0, 0, 0);
 
     /* The chips read these to drift with the die. Writing CSS variables keeps
        the parallax out of React — no per-frame re-render. */
     const style = this.container.style;
-    style.setProperty('--die-x', (this.camBase.x / 8.6 * 0.5 + this.pointerX * 0.5).toFixed(3));
-    style.setProperty('--die-y', (this.camBase.z / 8.6 * 0.5 - this.pointerY * 0.5).toFixed(3));
+    style.setProperty('--die-x', (Math.sin(this.orbit) * 0.5 + this.pointerX * 0.5).toFixed(3));
+    style.setProperty('--die-y', (Math.cos(this.orbit * 0.7) * 0.5 - this.pointerY * 0.5).toFixed(3));
 
     this.renderer.render(this.scene, this.camera);
   }
