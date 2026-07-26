@@ -58,6 +58,53 @@ const SAND = [
   { tone: 0x126b51, glow: 0x051f18 },
 ] as const;
 
+/**
+ * The band the sand's shading may move inside, as a multiplier on its own
+ * colour: fully turned away from the key at one end, fully into it at the other.
+ *
+ * Lighting the sand properly is what made one hourglass read as several greens —
+ * a pyramid's walls, its base and its opposite twin each landed on a different
+ * value. So the sand stays unlit and takes a single hemispheric term instead,
+ * narrow enough that a face still reads as its own hex and wide enough that the
+ * cube has corners.
+ *
+ * The band is asymmetric because the light axis has no headroom: #7ff2cd is
+ * already at green 242, so 4% is all it can gain before the channel clips and the
+ * face goes white. The 12% at the other end is free.
+ */
+const SAND_SHADE_LOW = 0.88;
+const SAND_SHADE_HIGH = 1.04;
+/** Where the term's light comes from, in world space — the die turns under it. */
+const SAND_SHADE_DIR = new THREE.Vector3(3, 6, 4).normalize();
+
+/**
+ * Add that one hemispheric term to an unlit material.
+ *
+ * `MeshBasicMaterial` only pulls in three's normal chunks when it has an env map,
+ * so the varying is carried by hand off the raw attribute.
+ */
+function shadeUnlit(material: THREE.Material): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uShadeDir = { value: SAND_SHADE_DIR };
+    shader.uniforms.uShadeBand = { value: new THREE.Vector2(SAND_SHADE_LOW, SAND_SHADE_HIGH) };
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying vec3 vShadeNormal;\nvoid main() {')
+      .replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\n\tvShadeNormal = mat3( modelMatrix ) * normal;',
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'void main() {',
+        'varying vec3 vShadeNormal;\nuniform vec3 uShadeDir;\nuniform vec2 uShadeBand;\nvoid main() {',
+      )
+      .replace(
+        '#include <color_fragment>',
+        '#include <color_fragment>\n\tfloat shadeTerm = dot( normalize( vShadeNormal ), uShadeDir ) * 0.5 + 0.5;\n\tdiffuseColor.rgb *= mix( uShadeBand.x, uShadeBand.y, shadeTerm );',
+      );
+  };
+}
+
 const RAD = 40;
 const WALL_ROWS = 26;
 const CAP_ROWS = 8;
@@ -250,14 +297,16 @@ class Hourglass {
     // object here shares the same centre, so anything translucent would flicker.
     /* Unlit on purpose. A lit pyramid shades its walls, its base and its
        opposite twin differently, so one hourglass came out as several greens and
-       the cube as six colours instead of three. Flat means one hourglass is one
-       colour and the three visible faces are the mark's three. Tone mapping is
-       off for the same reason: ACES desaturates saturated greens hard. */
+       the cube as six colours instead of three. Tone mapping is off for the same
+       reason: ACES desaturates saturated greens hard. What the material does take
+       is `shadeUnlit`'s single narrow term — a flat cube read as a sticker, and a
+       band of a sixth is enough to give it edges without giving it six colours. */
     this.sandMat = new THREE.MeshBasicMaterial({
       color: this.tone,
       toneMapped: false,
       side: THREE.DoubleSide,
     });
+    shadeUnlit(this.sandMat);
     this.plus = new PyramidSand(this.sandMat);
     this.minus = new PyramidSand(this.sandMat);
     this.group.add(this.plus.mesh, this.minus.mesh);
