@@ -39,6 +39,24 @@ export interface UseSafeYieldPlans {
   loading: boolean
   error: string | null
   refresh: () => void
+  /** Hide a plan from this view. Local only — the mandate is untouched on-chain. */
+  dismiss: (agentAddress: Address) => void
+}
+
+/**
+ * Plans the operator has hidden. Purely cosmetic and deliberately separate from
+ * revoking: a dismissed plan is still signed and still redeemable, so this is for
+ * clearing abandoned attempts out of the way, not for making them safe.
+ */
+const DISMISSED_KEY = 'og-dismissed-yield-plans'
+
+function dismissedSet(): Set<string> {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY)
+    return new Set(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    return new Set()
+  }
 }
 
 /**
@@ -65,6 +83,17 @@ export function useSafeYieldPlans(moduleAddress: Address | undefined, chainId: n
   const [nonce, setNonce] = useState(0)
 
   const refresh = useCallback(() => setNonce((n) => n + 1), [])
+
+  const dismiss = useCallback((agentAddress: Address) => {
+    try {
+      const next = dismissedSet()
+      next.add(agentAddress.toLowerCase())
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify([...next]))
+    } catch {
+      // best-effort — a failed write only means the plan reappears on reload
+    }
+    setPlans((current) => current.filter((p) => p.agentAddress.toLowerCase() !== agentAddress.toLowerCase()))
+  }, [])
 
   useEffect(() => {
     if (!moduleAddress) return
@@ -116,7 +145,8 @@ export function useSafeYieldPlans(moduleAddress: Address | undefined, chainId: n
             }
           }),
         )
-        if (!cancelled) setPlans(recovered)
+        const hidden = dismissedSet()
+        if (!cancelled) setPlans(recovered.filter((p) => !hidden.has(p.agentAddress.toLowerCase())))
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not read the Safe plans')
       } finally {
@@ -127,5 +157,5 @@ export function useSafeYieldPlans(moduleAddress: Address | undefined, chainId: n
     return () => { cancelled = true }
   }, [moduleAddress, chainId, nonce])
 
-  return { plans, loading, error, refresh }
+  return { plans, loading, error, refresh, dismiss }
 }

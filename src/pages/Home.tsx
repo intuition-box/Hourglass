@@ -6,6 +6,7 @@ import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { useSafePositions } from '../hooks/useSafePositions'
+import { useSafeYieldPlans } from '../hooks/useSafeYieldPlans'
 import { Positions } from '../ui/Positions'
 import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { portalAtomUrl } from '../lib/intuition'
@@ -105,6 +106,10 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const [safeInfo, setSafeInfo] = useState<{ owners: string[]; threshold: number } | null>(null)
   const [subs, setSubs] = useState<StoredDelegation[]>(() => getDelegations())
   const positions = useSafePositions(safe.safeAddress as Address, safe.chainId)
+  // Positions are NFTs and carry no mandate; the plans do, so strategy cards open the
+  // same detail + revoke every other delegation on this Safe uses. Reuses the module
+  // address this page already resolves for its status banner.
+  const yieldPlans = useSafeYieldPlans(moduleAddress ?? undefined, safe.chainId)
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
   // Limit orders are one-shot; once fired on-chain, show them as Executed not Active,
   // with a link to the redemption tx. Keyed by delegationHash → explorer URL ('' = no link).
@@ -245,11 +250,43 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
         </div>
       )}
 
+      {/* Liquidity positions — read from the chain, so they survive a reload and show up
+          whoever minted them. */}
+      {(positions.positions.length > 0 || positions.loading) && (
+        <div className="mb-6">
+          <div className="flex items-end justify-between gap-4 mb-3">
+            <div>
+              <h2 className="text-lg font-bold tracking-tight text-ink">Agentic DeFi strategies</h2>
+              <p className="text-dim text-xs mt-0.5">Positions an agent opened and manages under a capped mandate.</p>
+            </div>
+            <Btn kind="ghost" onClick={() => onNavigate('yield')}>Manage</Btn>
+          </div>
+          <Positions positions={positions.positions} loading={positions.loading} />
+          {yieldPlans.plans.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              {yieldPlans.plans.flatMap((pl) =>
+                pl.steps.map((st) => (
+                  <SubCard
+                    key={st.delegation.meta.delegationHash}
+                    d={st.delegation}
+                    onOpen={() => setSelected(st.delegation)}
+                  />
+                )),
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Separated because they answer different questions: strategies are what an
+          agent runs on the treasury, operations are what the treasury pays out. */}
+      <div className="border-t border-line mb-6" />
+
       {/* Header */}
       <div className="flex items-end justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Subscriptions</h1>
-          <p className="text-dim text-sm mt-1">Recurring USDC charges, capped on-chain.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Operations</h1>
+          <p className="text-dim text-sm mt-1">Subscriptions, streams and orders — each capped on-chain.</p>
         </div>
         <Btn kind="primary" icon={<IconPlus size={18} />} onClick={() => onNavigate('create')}>New subscription</Btn>
       </div>
@@ -263,22 +300,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
         </Card>
       </div>
 
-      {/* Liquidity positions — read from the chain, so they survive a reload and show up
-          whoever minted them. */}
-      {(positions.positions.length > 0 || positions.loading) && (
-        <div className="mb-6">
-          <div className="flex items-end justify-between gap-4 mb-3">
-            <div>
-              <h2 className="text-lg font-bold tracking-tight text-ink">Investments</h2>
-              <p className="text-dim text-xs mt-0.5">Liquidity held by this Safe.</p>
-            </div>
-            <Btn kind="ghost" onClick={() => onNavigate('yield')}>Manage</Btn>
-          </div>
-          <Positions positions={positions.positions} loading={positions.loading} />
-        </div>
-      )}
-
-      {/* Subscriptions grid */}
+      {/* Operations */}
       {subs.length === 0 ? (
         <Card className="p-8 text-center">
           <p className="text-dim text-sm">No subscriptions yet.</p>

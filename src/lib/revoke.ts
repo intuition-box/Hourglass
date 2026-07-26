@@ -52,3 +52,18 @@ export function buildRevokeTxs(d: StoredDelegation, chainId: number): SafeTx[] {
   })
   return [{ to: d.meta.moduleAddress, value: '0', data: executeData }]
 }
+
+/**
+ * Revoke every step of a yield plan in one Safe transaction.
+ *
+ * A plan is three separate delegations, and revoking two of three leaves an agent that
+ * can still spend the remaining one — so they travel together. Batched into a single
+ * Safe transaction because three signing rounds to undo one decision is not a choice
+ * the operator should have to make.
+ *
+ * Steps already consumed are harmless to include: disableDelegation on a spent
+ * delegation is a no-op, and filtering them would need on-chain state this does not have.
+ */
+export function buildRevokePlanTxs(steps: StoredDelegation[], chainId: number): SafeTx[] {
+  return steps.flatMap((step) => buildRevokeTxs(step, chainId))
+}
