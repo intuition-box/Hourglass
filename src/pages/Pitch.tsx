@@ -411,12 +411,12 @@ function SlideClose() {
           <IconExt size={14} /> hourglass.box
         </a>
         <a
-          href="https://github.com/intuition-box/OurGlass"
+          href="https://github.com/intuition-box/Hourglass"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-2 text-sm text-dim hover:text-ink transition"
         >
-          <IconExt size={14} /> github.com/intuition-box/OurGlass
+          <IconExt size={14} /> github.com/intuition-box/Hourglass
         </a>
       </div>
       <p className="mt-12 text-sm text-faint">Merci. Questions welcome — H optional.</p>

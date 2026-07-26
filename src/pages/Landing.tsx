@@ -1,6 +1,6 @@
 import { Logo } from '../ui/components'
 
-const REPO_URL = 'https://github.com/intuition-box/OurGlass'
+const REPO_URL = 'https://github.com/intuition-box/Hourglass'
 
 /**
  * Shown when the app is opened top-level (not inside a Safe iframe). The Safe
