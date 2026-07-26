@@ -472,18 +472,26 @@ export default function Yield() {
   /** Wait until the plan is discoverable, not merely published: the poke returns as
    *  soon as the backend has written, the graph indexes after, and an agent started in
    *  between finds nothing. Polls the path the runner itself uses. */
-  async function waitForYieldIndexing(deadlineMs = 120_000): Promise<boolean> {
+  async function waitForYieldIndexing(deadlineMs = 180_000): Promise<boolean> {
     const started = Date.now()
+    let seen = 0
     while (Date.now() - started < deadlineMs) {
       try {
+        // Re-publish every round, not once up front. The three steps are three separate
+        // Safe messages, and the tx-service assembles preparedSignature asynchronously —
+        // on a multisig the last one is routinely still unfinalized when Start is
+        // clicked. A single pass skips it and it would never be picked up.
+        await finalizePending(safe.chainId, safeAddress as Address)
         const found = await discoverIncomingDelegations(effectiveAgent as Address, safe.chainId)
-        // A plan is three pinned steps; anything less is a partially-indexed plan.
-        if (found.filter((d) => d.meta.calldataArgs).length >= 3) return true
+        seen = found.filter((d) => d.meta.calldataArgs).length
+        setPublishStatus(`Waiting for the plan to be indexed… (${seen}/3 steps)`)
+        if (seen >= 3) return true
       } catch {
-        // transient graph error — keep polling until the deadline
+        // transient graph / tx-service error — keep polling until the deadline
       }
       await new Promise((r) => setTimeout(r, 4000))
     }
+    setPlanError(`Only ${seen} of the plan's 3 steps are on Intuition. Signatures can take a while to finalise on a multisig — start the agent again in a moment.`)
     return false
   }
 
@@ -492,12 +500,8 @@ export default function Yield() {
     setPlanError(null)
     setPublishing(true)
     try {
-      await finalizePending(safe.chainId, safeAddress as Address)
-      setPublishStatus('Waiting for the plan to be indexed…')
-      if (!(await waitForYieldIndexing())) {
-        setPlanError('The plan is not discoverable on Intuition yet — indexing can lag. Start the agent again in a moment.')
-        return
-      }
+      setPublishStatus('Publishing the plan…')
+      if (!(await waitForYieldIndexing())) return // sets its own, more specific error
     } catch (err) {
       setPlanError(err instanceof Error ? `Could not publish the plan: ${err.message}` : 'Could not publish the plan')
       return

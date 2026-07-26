@@ -169,6 +169,9 @@ export default function LimitOrder() {
     const started = Date.now()
     while (Date.now() - started < deadlineMs) {
       try {
+        // Re-publish each round: a signature finalised after the first pass would
+        // otherwise never be picked up (see the yield rail, same cause).
+        await finalizePending(safe.chainId, safe.safeAddress as Address)
         const found = await discoverIncomingDelegations(effectiveAgent as Address, safe.chainId)
         if (found.some((d) => d.meta.delegationHash?.toLowerCase() === hash.toLowerCase())) return true
       } catch {
