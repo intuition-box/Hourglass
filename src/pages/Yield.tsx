@@ -1,9 +1,12 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
-import { createPublicClient, http, isAddress, parseUnits, formatUnits, erc20Abi, type Address, type Hex } from 'viem'
+import { createPublicClient, http, isAddress, parseUnits, parseEther, formatUnits, erc20Abi, type Address, type Hex } from 'viem'
 import { useUniswapPools } from '../hooks/useUniswapPools'
 import { buildDepositPlan, type DepositPlan } from '../lib/uniswapPosition'
 import { buildYieldDelegations, buildStoredYieldPlan, type YieldDelegation, type StoredYieldPlan } from '../lib/yieldDelegations'
+import { useAgentRun } from '../hooks/useAgentRun'
+import { finalizePending } from '../hooks/useFinalizePending'
+import { discoverIncomingDelegations } from '../lib/intuition/discover'
 import { buildCompoundMandate, buildStoredCompoundDelegation, type CompoundMandate, type CompoundMode, type StoredCompoundDelegation } from '../lib/compoundDelegation'
 import { readCompoundAllowances, buildCompoundApprovalTxs, type TokenAllowance } from '../lib/compoundApproval'
 import { buildDelegationTypedData } from '../lib/delegations'
@@ -108,7 +111,11 @@ export default function Yield() {
   // Who redeems: 'agent' delegates to an external agent wallet (a bot runs it);
   // 'manual' makes the Safe itself the delegate, so the operator redeems from the
   // Safe App (no bot, no key handoff). The choice sets the delegate at signing time.
-  const [redeemMode, setRedeemMode] = useState<'agent' | 'manual'>('agent')
+  const [redeemMode, setRedeemMode] = useState<'hosted' | 'manual'>('hosted')
+  const agentSvc = useAgentRun()
+  const [fundingAgent, setFundingAgent] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [publishStatus, setPublishStatus] = useState<string | null>(null)
   const [redeeming, setRedeeming] = useState(false)
   const [redeemDone, setRedeemDone] = useState(false)
   const [compoundingNow, setCompoundingNow] = useState(false)
@@ -119,9 +126,11 @@ export default function Yield() {
   const pool = selectedPool ?? recommended
   // Pre-fill from the env var if the operator set one, but the user can always
   // paste a different agent address — the input is the source of truth.
-  const [agent, setAgent] = useState(() => (import.meta.env.VITE_YIELD_AGENT_ADDRESS as string | undefined) ?? '')
-  const agentValid = isAddress(agent)
-  const agentAddress = agentValid ? (agent as Address) : undefined
+  // The delegate is the wallet the service provisioned; manual mode delegates to the
+  // Safe itself, so there is no address for the operator to supply either way.
+  const effectiveAgent = agentSvc.agentAddress ?? ''
+  const agentValid = isAddress(effectiveAgent)
+  const agentAddress = agentValid ? (effectiveAgent as Address) : undefined
   const safeAddress = safe.safeAddress as Address
   // The delegate the plan is signed to: an external agent (Agent mode) or the Safe
   // itself (Manual mode, so the operator can redeem it from the Safe App).
@@ -443,6 +452,67 @@ export default function Yield() {
   // Manual compound: read the Safe's live position + owed fees, then redeem collect +
   // increaseLiquidity as one atomic Safe tx (Manual mode — the Safe is the delegate).
   // Unlike deposit, the amounts aren't known until this call (see redeemCompound.ts).
+
+  const AGENT_GAS_ETH = '0.0015'
+
+  /** Gas for the agent, its own Safe transaction — three redeems, so more than a
+   *  limit order needs, and still the loss ceiling if the plan is never redeemed. */
+  async function handleFundAgent() {
+    if (!agentValid) return
+    setFundingAgent(true)
+    try {
+      await sdk.txs.send({ txs: [{ to: effectiveAgent, value: parseEther(AGENT_GAS_ETH).toString(), data: '0x' }] })
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : 'Failed to fund the agent')
+    } finally {
+      setFundingAgent(false)
+    }
+  }
+
+  /** Wait until the plan is discoverable, not merely published: the poke returns as
+   *  soon as the backend has written, the graph indexes after, and an agent started in
+   *  between finds nothing. Polls the path the runner itself uses. */
+  async function waitForYieldIndexing(deadlineMs = 120_000): Promise<boolean> {
+    const started = Date.now()
+    while (Date.now() - started < deadlineMs) {
+      try {
+        const found = await discoverIncomingDelegations(effectiveAgent as Address, safe.chainId)
+        // A plan is three pinned steps; anything less is a partially-indexed plan.
+        if (found.filter((d) => d.meta.calldataArgs).length >= 3) return true
+      } catch {
+        // transient graph error — keep polling until the deadline
+      }
+      await new Promise((r) => setTimeout(r, 4000))
+    }
+    return false
+  }
+
+  async function handleStartAgent() {
+    if (!storedPlan) return
+    setPlanError(null)
+    setPublishing(true)
+    try {
+      await finalizePending(safe.chainId, safeAddress as Address)
+      setPublishStatus('Waiting for the plan to be indexed…')
+      if (!(await waitForYieldIndexing())) {
+        setPlanError('The plan is not discoverable on Intuition yet — indexing can lag. Start the agent again in a moment.')
+        return
+      }
+    } catch (err) {
+      setPlanError(err instanceof Error ? `Could not publish the plan: ${err.message}` : 'Could not publish the plan')
+      return
+    } finally {
+      setPublishing(false)
+      setPublishStatus(null)
+    }
+    await agentSvc.start({
+      hourglassStrategy: 'yield',
+      chainId: safe.chainId,
+      safe: safeAddress as Address,
+      agent: effectiveAgent as Address,
+    } as never)
+  }
+
   async function handleCompoundNow() {
     if (!storedPlan?.compound || !pool) return
     const positionManager = storedPlan.compound.meta.targetAddress
@@ -577,7 +647,7 @@ export default function Yield() {
             <span className="text-[11px] text-faint">Redeemed by</span>
             <Segmented
               options={[
-                { key: 'agent', label: 'Agent' },
+                { key: 'hosted', label: 'Run it for me' },
                 { key: 'manual', label: 'Manual' },
               ]}
               value={redeemMode}
@@ -585,22 +655,23 @@ export default function Yield() {
             />
           </div>
 
-          {redeemMode === 'agent' ? (
+          {redeemMode === 'hosted' ? (
             <>
-              <Field label="Agent address" required missing={agent !== '' && !agentValid}>
-                <input
-                  type="text" placeholder="0x…" value={agent}
-                  onChange={(e) => setAgent(e.target.value)}
-                  aria-label="Agent address"
-                  className={`font-mono ${agent && !agentValid ? 'ring-1 ring-danger' : ''}`}
-                />
-              </Field>
-              {!agentValid && (
-                <p className="text-xs text-faint -mt-2">
-                  Run the agent yourself (see scripts/yield-agent.ts) and paste its wallet address here — everything below
-                  stays locked until you do.
-                </p>
+              <p className="text-xs text-dim -mt-1 leading-relaxed">
+                Hourglass runs the agent and holds its key. It only ever spends gas — every step is pinned to an exact
+                transaction the Safe signed, so the agent cannot change the target, method, amount or recipient.
+              </p>
+              {agentSvc.agentAddress ? (
+                <div className="flex items-center gap-2 mt-1">
+                  <IconCheck size={14} />
+                  <Mono className="text-xs text-dim">{short(agentSvc.agentAddress)}</Mono>
+                </div>
+              ) : (
+                <Btn kind="secondary" onClick={() => void agentSvc.provision()} disabled={agentSvc.provisioning} className="mt-1">
+                  {agentSvc.provisioning ? 'Creating the agent…' : 'Execute with an agent'}
+                </Btn>
               )}
+              {agentSvc.error && <p className="text-xs text-pending mt-2">{agentSvc.error}</p>}
             </>
           ) : (
             <p className="text-xs text-faint">
@@ -733,7 +804,37 @@ export default function Yield() {
                   )}
                 </div>
 
-                {redeemMode === 'manual' ? (
+                {redeemMode === 'hosted' ? (
+                  <div className="space-y-3">
+                    {/* Gas first, then start: the agent sends three redeems itself, and
+                        the service refuses to start on an unfunded one. */}
+                    <p className="text-xs text-dim leading-relaxed">
+                      Send the agent gas, then start it. It redeems the three steps in order and stops at the first failure.
+                    </p>
+                    <Btn kind="ghost" size="sm" onClick={handleFundAgent} disabled={fundingAgent} className="w-full">
+                      {fundingAgent ? 'Submitting…' : `Send ${AGENT_GAS_ETH} ETH for gas`}
+                    </Btn>
+                    <Btn
+                      kind="primary"
+                      size="sm"
+                      onClick={handleStartAgent}
+                      disabled={publishing || agentSvc.starting || agentSvc.run?.state === 'running'}
+                      className="w-full"
+                    >
+                      {publishing ? (publishStatus ?? 'Publishing the plan…') : agentSvc.starting ? 'Starting…' : agentSvc.run ? 'Restart agent' : 'Start agent'}
+                    </Btn>
+                    {agentSvc.run && (
+                      <div className="rounded-lg bg-raised ring-1 ring-line p-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-faint">Agent</span>
+                          <span className="text-[11px] font-medium text-ink">{agentSvc.run.state}</span>
+                        </div>
+                        {agentSvc.run.detail && <p className="text-[11px] text-dim leading-relaxed">{agentSvc.run.detail}</p>}
+                      </div>
+                    )}
+                    {agentSvc.error && <p className="text-[11px] text-pending leading-relaxed">{agentSvc.error}</p>}
+                  </div>
+                ) : redeemMode === 'manual' ? (
                   redeemDone ? (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 text-sm font-medium text-active">

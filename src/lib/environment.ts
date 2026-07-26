@@ -38,6 +38,12 @@ export function getEnvironment(chainId: number) {
       AllowedMethodsEnforcer: hourglass.allowedMethodsEnforcer,
       ValueLteEnforcer: hourglass.valueLteEnforcer,
       LimitedCallsEnforcer: hourglass.limitedCallsEnforcer,
+      // The yield rail — same reasoning as the strategy rail above. Its mandates pin
+      // the exact execution and restrict who may redeem, so route both through the
+      // HourGlass instances or a yield plan is attributable to nobody, and the
+      // discovery side (which matches on these addresses) never finds it.
+      ExactExecutionEnforcer: hourglass.exactExecutionEnforcer,
+      RedeemerEnforcer: hourglass.redeemerEnforcer,
     },
   }
 }

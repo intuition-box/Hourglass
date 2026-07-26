@@ -185,6 +185,43 @@ export function findApproveTargetToken(delegation: DelegationStruct, chainId: nu
   return getAddress(target.terms)
 }
 
+/** Canonical ExactExecutionEnforcer (deterministic across chains) from the SDK. */
+const CANONICAL_EXACT_EXECUTION_ENFORCER = '0x146713078D39eCC1F5338309c28405ccf85Abfbb'
+
+export interface ExactExecutionTerms {
+  target: Address
+  value: bigint
+  callData: Hex
+}
+
+/**
+ * Decode the exactExecution caveat terms: target(20) + value(32) + callData(rest).
+ * The yield rail pins each step this way, so these terms ARE the execution the agent
+ * has to resubmit — there is nothing else to reconstruct it from.
+ */
+export function decodeExactExecutionTerms(terms: Hex): ExactExecutionTerms {
+  return {
+    target: getAddress(sliceHex(terms, 0, 20)),
+    value: hexToBigInt(sliceHex(terms, 20, 52)),
+    callData: sliceHex(terms, 52),
+  }
+}
+
+/**
+ * Match both the HourGlass instance and the canonical SDK one. Mandates signed before
+ * ExactExecutionEnforcer was routed through the HourGlass block carry the canonical
+ * address; dropping it here would make those plans permanently undiscoverable.
+ */
+export function findExactExecutionCaveat(
+  delegation: DelegationStruct,
+  chainId: number,
+): { enforcer: Address; terms: Hex } | null {
+  const enforcers = [CANONICAL_EXACT_EXECUTION_ENFORCER, getAddresses(chainId).hourglass?.exactExecutionEnforcer]
+    .filter((a): a is Address => Boolean(a))
+    .map((a) => a.toLowerCase())
+  return delegation.caveats.find((c) => enforcers.includes(c.enforcer.toLowerCase())) ?? null
+}
+
 /**
  * Whether the mandate carries a limitedCalls caveat — the marker of a limit order
  * (a single price-triggered swap) versus a recurring DCA. Both carry a
@@ -331,6 +368,25 @@ async function toStoredDelegation(
         tokenAddress: token,
         capPerSwap: formatUnits(amount, decimals),
         enforceDecrease,
+      },
+    }
+  }
+
+  // The yield rail: each step of a deposit plan pins its exact execution. There is no
+  // amount or token to decode — the calldata IS the mandate, and the agent's only job
+  // is to resubmit it. targetAddress + calldataArgs are what the runner redeems with.
+  const pinned = findExactExecutionCaveat(delegation, chainId)
+  if (pinned) {
+    const { target, callData } = decodeExactExecutionTerms(pinned.terms)
+    return {
+      delegation,
+      meta: {
+        ...common,
+        scopeType: 'custom',
+        status: 'signed',
+        targetAddress: target,
+        methodSelector: sliceHex(callData, 0, 4),
+        calldataArgs: callData,
       },
     }
   }
