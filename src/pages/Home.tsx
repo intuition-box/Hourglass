@@ -5,12 +5,10 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
-import { useSafePositions } from '../hooks/useSafePositions'
 import { useUniswapPools } from '../hooks/useUniswapPools'
 import { useSafeYieldPlans, type YieldPlanStep } from '../hooks/useSafeYieldPlans'
 import { PlanFolder } from '../ui/PlanFolder'
 import { buildRevokeTxs } from '../lib/revoke'
-import { Positions } from '../ui/Positions'
 import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { portalAtomUrl } from '../lib/intuition'
 import { SubscriptionDetail } from './SubscriptionDetail'
@@ -108,7 +106,6 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const [error, setError] = useState<string | null>(null)
   const [safeInfo, setSafeInfo] = useState<{ owners: string[]; threshold: number } | null>(null)
   const [subs, setSubs] = useState<StoredDelegation[]>(() => getDelegations())
-  const positions = useSafePositions(safe.safeAddress as Address, safe.chainId)
   // Positions are NFTs and carry no mandate; the plans do, so strategy cards open the
   // same detail + revoke every other delegation on this Safe uses. Reuses the module
   // address this page already resolves for its status banner.
@@ -281,9 +278,10 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
         </div>
       )}
 
-      {/* Liquidity positions — read from the chain, so they survive a reload and show up
-          whoever minted them. */}
-      {(positions.positions.length > 0 || positions.loading) && (
+      {/* Recovered from the graph and the chain, so they survive a reload. The plan card
+          already carries the pair, the amounts and the yield — a separate positions strip
+          only said the same thing twice. */}
+      {yieldPlans.plans.length > 0 && (
         <div className="mb-6">
           <div className="flex items-end justify-between gap-4 mb-6">
             <div>
@@ -292,7 +290,6 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
             </div>
             <Btn kind="ghost" onClick={() => onNavigate('yield')}>Manage</Btn>
           </div>
-          <Positions positions={positions.positions} loading={positions.loading} />
           {yieldPlans.plans.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
               {yieldPlans.plans.map((pl) => (

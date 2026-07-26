@@ -6,13 +6,11 @@ import { buildDepositPlan, type DepositPlan } from '../lib/uniswapPosition'
 import { buildYieldDelegations, buildStoredYieldPlan, type YieldDelegation, type StoredYieldPlan } from '../lib/yieldDelegations'
 import { useAgentRun } from '../hooks/useAgentRun'
 import { useSafeYieldPlans } from '../hooks/useSafeYieldPlans'
-import { useSafePositions } from '../hooks/useSafePositions'
 import { SubscriptionDetail } from './SubscriptionDetail'
 import { PlanFolder } from '../ui/PlanFolder'
 import { buildRevokeTxs } from '../lib/revoke'
 import type { YieldPlanStep } from '../hooks/useSafeYieldPlans'
 import type { StoredDelegation } from '../lib/storage'
-import { Positions } from '../ui/Positions'
 import { finalizePending } from '../hooks/useFinalizePending'
 import { discoverIncomingDelegations } from '../lib/intuition/discover'
 import { buildCompoundMandate, buildStoredCompoundDelegation, type CompoundMandate, type CompoundMode, type StoredCompoundDelegation } from '../lib/compoundDelegation'
@@ -123,7 +121,6 @@ export default function Yield() {
   const agentSvc = useAgentRun()
   const [moduleAddress, setModuleAddress] = useState<Address | undefined>(undefined)
   const safePlans = useSafeYieldPlans(moduleAddress, safe.chainId)
-  const safePositions = useSafePositions(safe.safeAddress as Address, safe.chainId)
 
   // The delegator of every mandate this Safe signs, and the key the graph is indexed
   // by — so it has to be known on load, not only once the operator signs something.
@@ -698,16 +695,12 @@ export default function Yield() {
         <SubscriptionDetail d={selectedStep} onClose={() => setSelectedStep(null)} onChanged={safePlans.refresh} />
       )}
 
-      {(safePositions.positions.length > 0 || safePlans.plans.length > 0) && (
+      {safePlans.plans.length > 0 && (
         <div className="mb-6 space-y-4">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-ink">Your liquidity</h2>
             <p className="text-dim text-xs mt-0.5">Open positions and the mandates behind them.</p>
           </div>
-
-          {safePositions.positions.length > 0 && (
-            <Positions positions={safePositions.positions} loading={safePositions.loading} detailed />
-          )}
 
           {/* Folded: the chain sees three mandates per deposit, the operator sees one
               decision. The parts stay one click away. */}
