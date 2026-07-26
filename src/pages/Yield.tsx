@@ -560,6 +560,13 @@ export default function Yield() {
         token1: pool.token1.address,
         fee: pool.fee,
       })
+      // increaseLiquidity computes a liquidity delta from the desired amounts and the
+      // pool reverts on a zero delta — mirrors run-compound.ts's "nothing to harvest"
+      // guard, which this manual path had been missing (it would build and submit a
+      // doomed tx instead of failing here with a clear reason).
+      if (position.fees0 === 0n && position.fees1 === 0n) {
+        throw new Error('Nothing to harvest yet — no fees have accrued on this position. Wait for some trading against the pool, then try again.')
+      }
       const tx = buildCompoundRedeemTx(safe.chainId, storedPlan.compound.delegation, positionManager, safeAddress, position)
       await sdk.txs.send({ txs: [tx] })
       setCompoundResult({ fees0: position.fees0, fees1: position.fees1 })

@@ -9,7 +9,7 @@ or keeping a terminal open.
 Today the operator pastes an address they generated locally, then runs
 `skills/hourglass-agent/scripts/run-limit-order.ts` and keeps the process alive.
 
-After: the app provisions the agent, the operator signs and funds, the runtime polls
+After: the app provisions the agent, the operator signs and funds, the runtime polls.
 and fills. The manual path stays — it becomes one of two options, not the only one.
 
 ## Flow and states
