@@ -18,9 +18,12 @@ export const S = 1; // cube half-size, and so each pyramid's height
     together rather than one painted block. This is the groove you see along
     every edge of the paper model. */
 export const PIECE = 0.93;
-/** Sand fills the pyramid itself, held off the glass by a hair so the coincident
-    faces don't fight. There are six volumes here, not twelve. */
-export const SAND_INSET = 0.995;
+/** Sand fills the pyramid itself, standing off the glass on every side. There are
+    six volumes here, not twelve — but a hair of clearance is not enough: at 0.5%
+    the walls were within a rounding error of the glass and the shared base plane
+    was exactly coincident, which is what made the surface flicker as the camera
+    moved. 1% separates them without turning the glass into a bright rim. */
+export const SAND_INSET = 0.99;
 /** A charge is exactly one pyramid of sand: a full piece, or empty glass. */
 export const CAPACITY = 1;
 
@@ -31,8 +34,9 @@ export const smoothstep = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** How far out the sand reaches: onto its pyramid's base, never through it. */
-export const SAND_SPAN = S * PIECE;
+/** How far out the sand reaches. Short of the pyramid's own base, so the two
+    caps never share a plane. */
+export const SAND_SPAN = S * PIECE * 0.99;
 
 /**
  * Where the surface sits in a draining pyramid — the one whose apex points down,
