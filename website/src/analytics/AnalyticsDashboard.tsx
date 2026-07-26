@@ -185,7 +185,9 @@ export function AnalyticsDashboard() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-fd-muted-foreground">Charges over time</h2>
           <div className="mt-3 flex h-32 items-end gap-1" role="img" aria-label="Charges per day">
             {days.map((d) => (
-              <div key={d.day} className="group relative flex-1" title={`${d.day}: ${d.count}`}>
+              // h-full gives each column a definite height; without it the bar's
+              // percentage height resolves against auto and every bar collapses.
+              <div key={d.day} className="flex h-full flex-1 items-end" title={`${d.day}: ${d.count}`}>
                 <div
                   className="w-full rounded-t-sm bg-[color:var(--accent)]"
                   style={{ height: `${Math.max(2, (d.count / peak) * 100)}%`, opacity: d.count === 0 ? 0.2 : 1 }}
