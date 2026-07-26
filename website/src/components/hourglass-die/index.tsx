@@ -166,8 +166,10 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
     <div className="relative z-10 flex min-w-0 flex-col">
       {children}
 
-      {/* Centred: the die sits on the axis the rings radiate from. */}
-      <div className="relative mx-auto -mt-6 hidden w-full max-w-[1120px] min-h-[380px] md:block lg:-mt-10 lg:min-h-[470px]">
+      {/* Centred: the die sits on the axis the rings radiate from. The headline
+          and the CTA stack above it, so the block needs a nudge down to land on
+          that axis rather than above it. */}
+      <div className="relative mx-auto mt-3 hidden w-full max-w-[1120px] min-h-[380px] md:block lg:mt-6 lg:min-h-[470px]">
         {/* the scene mounts its canvas here; the chips inherit its --die-* vars */}
         <div ref={hostRef} className="absolute inset-0">
           {!live && (
