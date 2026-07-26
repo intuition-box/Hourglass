@@ -21,6 +21,7 @@ const STRATEGIES: {
   tagline: string
   detail: string
   icon: typeof IconTrend
+  tint: string
 }[] = [
   {
     key: 'liquidity',
@@ -29,6 +30,7 @@ const STRATEGIES: {
     detail:
       'Deposits two tokens into a pool and earns a share of its trading fees. The agent redeems three pre-approved steps; it cannot change the pool, the amounts, or where the position lands.',
     icon: IconTrend,
+    tint: '#34D399',
   },
   {
     key: 'dip',
@@ -37,6 +39,7 @@ const STRATEGIES: {
     detail:
       'The agent watches the price and fills a single swap when your trigger is hit. The spend cap and the minimum received are both enforced on-chain — it can never overspend or overpay.',
     icon: IconStop,
+    tint: '#22D3EE',
   },
 ]
 
@@ -64,21 +67,23 @@ export default function AgentDefi({ initial }: { initial?: Strategy }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {STRATEGIES.map(({ key, title, tagline, detail, icon: Icon }) => (
-          <Card key={key} hover onClick={() => setStrategy(key)} className="p-5 cursor-pointer flex flex-col gap-3">
-            <div className="flex items-center gap-3">
+        {STRATEGIES.map(({ key, title, tagline, detail, icon: Icon, tint }) => (
+          <Card key={key} hover onClick={() => setStrategy(key)} className="p-5 cursor-pointer flex flex-col gap-4">
+            {/* Mirrors Payee's geometry (40px tile, same gap and name weight) so these
+                cards sit alongside the rest; Payee itself takes a text logo, not an icon. */}
+            <div className="flex items-start gap-3">
               <div
-                className="grid place-items-center w-9 h-9 rounded-xl shrink-0"
-                style={{ background: 'rgba(52,211,153,.14)', color: '#34D399' }}
+                className="grid place-items-center rounded-xl shrink-0"
+                style={{ width: 40, height: 40, color: tint, background: `${tint}1f`, boxShadow: `inset 0 0 0 1px ${tint}40` }}
               >
-                <Icon size={18} />
+                <Icon size={19} />
               </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-ink">{title}</div>
-                <div className="text-xs text-dim">{tagline}</div>
+              <div className="leading-tight min-w-0">
+                <div className="font-semibold text-ink">{title}</div>
+                <div className="text-xs text-dim mt-0.5">{tagline}</div>
               </div>
             </div>
-            <p className="text-xs text-dim leading-relaxed">{detail}</p>
+            <p className="text-sm text-dim leading-relaxed">{detail}</p>
           </Card>
         ))}
       </div>

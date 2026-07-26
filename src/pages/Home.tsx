@@ -6,6 +6,7 @@ import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { useSafePositions } from '../hooks/useSafePositions'
+import { useUniswapPools } from '../hooks/useUniswapPools'
 import { useSafeYieldPlans, type YieldPlanStep } from '../hooks/useSafeYieldPlans'
 import { PlanFolder } from '../ui/PlanFolder'
 import { buildRevokeTxs } from '../lib/revoke'
@@ -113,6 +114,20 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   // address this page already resolves for its status banner.
   const yieldPlans = useSafeYieldPlans(moduleAddress ?? undefined, safe.chainId)
   const [revokingHash, setRevokingHash] = useState<string | null>(null)
+  const uniswapPools = useUniswapPools(safe.chainId)
+
+  /** The pool a plan deposits into, matched on the pair and fee its mint pinned. */
+  function apyFor(plan: { deposit: { token0: { address: string }; token1: { address: string }; fee: number } | null }): number | null {
+    const d = plan.deposit
+    if (!d) return null
+    const pool = uniswapPools.pools.find(
+      (p) =>
+        p.fee === d.fee &&
+        p.token0.address.toLowerCase() === d.token0.address.toLowerCase() &&
+        p.token1.address.toLowerCase() === d.token1.address.toLowerCase(),
+    )
+    return pool?.apy ?? null
+  }
 
   async function revokeStep(step: YieldPlanStep) {
     const hash = step.delegation.meta.delegationHash
@@ -270,10 +285,10 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
           whoever minted them. */}
       {(positions.positions.length > 0 || positions.loading) && (
         <div className="mb-6">
-          <div className="flex items-end justify-between gap-4 mb-3">
+          <div className="flex items-end justify-between gap-4 mb-6">
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-ink">Agentic DeFi strategies</h2>
-              <p className="text-dim text-xs mt-0.5">Positions an agent opened and manages under a capped mandate.</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-ink">Agentic DeFi strategies</h1>
+              <p className="text-dim text-sm mt-1">Positions an agent opened and manages under a capped mandate.</p>
             </div>
             <Btn kind="ghost" onClick={() => onNavigate('yield')}>Manage</Btn>
           </div>
@@ -284,6 +299,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
                 <PlanFolder
                   key={pl.agentAddress}
                   plan={pl}
+                  apy={apyFor(pl)}
                   onOpenStep={(st) => setSelected(st.delegation)}
                   onRevokeStep={(st) => void revokeStep(st)}
                   revokingHash={revokingHash}

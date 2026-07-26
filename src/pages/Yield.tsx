@@ -603,7 +603,7 @@ export default function Yield() {
   return (
     <div className="rise">
       <div className="mb-6">
-        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Yield</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-ink">Provide liquidity</h1>
         <p className="text-dim text-sm mt-1">
           Real Uniswap v3 pools on {chainName(safe.chainId)}, ranked by fee APY and depth. Depositing needs both tokens
           in the Safe already and a signed delegation the agent redeems on its own.

@@ -7,9 +7,10 @@
  * the plan list and the agent address the app had only kept in React state.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { createPublicClient, http, parseAbi, type Address, type Hex } from 'viem'
+import { createPublicClient, http, parseAbi, decodeFunctionData, erc20Abi, type Address, type Hex } from 'viem'
 import { discoverBySafe } from '../lib/intuition/discover'
 import { getAddresses } from '../config/addresses'
+import { UniswapV3PositionManagerABI } from '../config/abis'
 import { findChain, rpcUrl } from '../config/supported-chains'
 import type { StoredDelegation } from '../lib/storage'
 
@@ -24,6 +25,16 @@ export interface YieldPlanStep {
   consumed: boolean
 }
 
+/** What the deposit actually commits, decoded from the mint the Safe signed. */
+export interface PlanDeposit {
+  token0: { address: Address; symbol: string; decimals: number }
+  token1: { address: Address; symbol: string; decimals: number }
+  amount0: bigint
+  amount1: bigint
+  /** Pool fee in hundredths of a bip — 3000 is 0.3%. */
+  fee: number
+}
+
 export interface RecoveredYieldPlan {
   /** The delegate every step of this plan was signed to. */
   agentAddress: Address
@@ -32,6 +43,8 @@ export interface RecoveredYieldPlan {
   complete: boolean
   /** Every step spent — the deposit has been made. */
   done: boolean
+  /** Null while the mint step is still being indexed. */
+  deposit: PlanDeposit | null
 }
 
 export interface UseSafeYieldPlans {
@@ -64,6 +77,25 @@ function dismissedSet(): Set<string> {
  * key — and it is the only grouping the mandates themselves carry: each step's salt is
  * keccak256 of its own calldata, so nothing links the three together directly.
  */
+const MINT_SELECTOR = '0x88316456'
+
+/**
+ * The mint's pinned calldata carries the pair, the fee tier and both amounts — it is the
+ * deposit the Safe signed, so it needs no separate record and cannot drift from it.
+ */
+function decodeDeposit(steps: YieldPlanStep[]): Omit<PlanDeposit, 'token0' | 'token1'> & { t0: Address; t1: Address } | null {
+  const mint = steps.find((s) => s.selector.toLowerCase() === MINT_SELECTOR)
+  const callData = mint?.delegation.meta.calldataArgs as Hex | undefined
+  if (!callData) return null
+  try {
+    const { args } = decodeFunctionData({ abi: UniswapV3PositionManagerABI, data: callData })
+    const p = (args as readonly [{ token0: Address; token1: Address; fee: number; amount0Desired: bigint; amount1Desired: bigint }])[0]
+    return { t0: p.token0, t1: p.token1, fee: Number(p.fee), amount0: p.amount0Desired, amount1: p.amount1Desired }
+  } catch {
+    return null
+  }
+}
+
 function groupByAgent(delegations: StoredDelegation[]): Map<Address, StoredDelegation[]> {
   const byAgent = new Map<Address, StoredDelegation[]>()
   for (const d of delegations) {
@@ -137,11 +169,31 @@ export function useSafeYieldPlans(moduleAddress: Address | undefined, chainId: n
                 }
               }),
             )
+            const raw = decodeDeposit(withState)
+            let deposit: PlanDeposit | null = null
+            if (raw) {
+              const meta = await Promise.all(
+                [raw.t0, raw.t1].map(async (address) => {
+                  try {
+                    const [symbol, decimals] = await Promise.all([
+                      client.readContract({ address, abi: erc20Abi, functionName: 'symbol' }),
+                      client.readContract({ address, abi: erc20Abi, functionName: 'decimals' }),
+                    ])
+                    return { address, symbol, decimals }
+                  } catch {
+                    // A token that will not answer should not hide the deposit.
+                    return { address, symbol: '???', decimals: 18 }
+                  }
+                }),
+              )
+              deposit = { token0: meta[0], token1: meta[1], amount0: raw.amount0, amount1: raw.amount1, fee: raw.fee }
+            }
             return {
               agentAddress,
               steps: withState,
               complete: withState.length >= 3,
               done: withState.length >= 3 && withState.every((s) => s.consumed),
+              deposit,
             }
           }),
         )

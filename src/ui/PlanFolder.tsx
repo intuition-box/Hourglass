@@ -8,9 +8,10 @@
  */
 import { useState } from 'react'
 import type { Address } from 'viem'
+import { formatUnits } from 'viem'
 import type { RecoveredYieldPlan, YieldPlanStep } from '../hooks/useSafeYieldPlans'
-import { Card, Btn, Mono } from './components'
-import { IconCheck, IconTrend } from './icons'
+import { Card, Btn, Mono, Payee } from './components'
+import { IconCheck } from './icons'
 
 const MINT_SELECTOR = '0x88316456'
 
@@ -20,43 +21,68 @@ function stepLabel(step: YieldPlanStep): string {
   return step.selector.toLowerCase() === MINT_SELECTOR ? 'Mint position' : 'Approve token'
 }
 
+/** Trim without hiding the magnitude of a small deposit. */
+function amount(value: bigint, decimals: number): string {
+  const n = Number(formatUnits(value, decimals))
+  if (n === 0) return '0'
+  if (n < 0.0001) return n.toExponential(2)
+  return n.toLocaleString(undefined, { maximumFractionDigits: 6 })
+}
+
 export function PlanFolder({
   plan,
+  apy,
   onOpenStep,
   onRevokeStep,
   revokingHash,
 }: {
   plan: RecoveredYieldPlan
+  /** Pool APY as a fraction, when the subgraph has enough data for it. */
+  apy?: number | null
   onOpenStep: (step: YieldPlanStep) => void
   onRevokeStep: (step: YieldPlanStep) => void
   revokingHash: string | null
 }) {
   const [open, setOpen] = useState(false)
-  const spent = plan.steps.filter((s) => s.consumed).length
+  const d = plan.deposit
+  // Same derivation as SubCard, so a plan and a subscription look like siblings.
+  const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
+  let h = 0
+  for (let i = 2; i < plan.agentAddress.length; i++) h = (h * 31 + plan.agentAddress.charCodeAt(i)) >>> 0
+  const tint = palette[h % palette.length]
+  const logo = plan.agentAddress.slice(2, 4).toUpperCase()
 
   return (
     <>
-      <Card hover onClick={() => setOpen(true)} className="p-5 cursor-pointer">
+      <Card hover onClick={() => setOpen(true)} className="p-5 cursor-pointer relative">
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="grid place-items-center w-9 h-9 rounded-xl shrink-0"
-              style={{ background: 'rgba(52,211,153,.14)', color: '#34D399' }}
-            >
-              <IconTrend size={18} />
+          <Payee
+            logo={logo}
+            tint={tint}
+            name="Liquidity deposit"
+            addr={d ? `${d.token0.symbol} / ${d.token1.symbol} · ${d.fee / 10000}%` : short(plan.agentAddress)}
+          />
+          {typeof apy === 'number' && (
+            <span className="text-xs font-semibold shrink-0" style={{ color: '#34D399' }}>
+              {(apy * 100).toFixed(1)}% APY
+            </span>
+          )}
+        </div>
+
+        {d && (
+          <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-lg glass-soft ring-1 ring-line px-3 py-2">
+              <div className="text-faint">{d.token0.symbol}</div>
+              <div className="text-ink font-semibold mt-0.5 font-mono tnum">{amount(d.amount0, d.token0.decimals)}</div>
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-ink">Liquidity deposit</div>
-              <Mono className="text-[11px] text-faint">{short(plan.agentAddress)}</Mono>
+            <div className="rounded-lg glass-soft ring-1 ring-line px-3 py-2">
+              <div className="text-faint">{d.token1.symbol}</div>
+              <div className="text-ink font-semibold mt-0.5 font-mono tnum">{amount(d.amount1, d.token1.decimals)}</div>
             </div>
           </div>
-          <span className="text-[11px] text-faint shrink-0">
-            {plan.done ? 'complete' : plan.complete ? `${spent}/${plan.steps.length} done` : 'indexing'}
-          </span>
-        </div>
-        <div className="mt-4 text-xs text-dim">
-          {plan.steps.length} delegation{plan.steps.length === 1 ? '' : 's'} — open to inspect or revoke
-        </div>
+        )}
+
+        <div className="mt-4 text-xs text-dim">Open to inspect or revoke</div>
       </Card>
 
       {open && (
