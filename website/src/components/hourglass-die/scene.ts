@@ -635,6 +635,16 @@ export class HourglassDie {
   }
 
   private startRoll(axis: AxisIndex): void {
+    /* Settle every charged glass into a single pyramid first. A glass caught
+       mid-drain has sand in both of its pyramids, and each part-full pyramid is
+       a face you can't see through — roll away from two of those and the cube is
+       solid on every side. One end full, one end empty, always. The tumble hides
+       the jump, the same way it hides a charge arriving. */
+    for (const glass of this.glasses) {
+      if (glass.charge === 0) continue;
+      glass.fillPlus = glass.gravity > 0 ? 1 : 0; // whichever end is downhill
+    }
+
     // An hourglass is charged the moment the die turns toward it, so the sand
     // arrives under cover of the tumble rather than popping into a still frame.
     this.glasses[axis].charge = 1;
