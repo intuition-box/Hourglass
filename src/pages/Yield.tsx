@@ -665,6 +665,7 @@ export default function Yield() {
                 <div className="flex items-center gap-2 mt-1">
                   <IconCheck size={14} />
                   <Mono className="text-xs text-dim">{short(agentSvc.agentAddress)}</Mono>
+                  <CopyChip value={agentSvc.agentAddress} label="Copy" />
                 </div>
               ) : (
                 <Btn kind="secondary" onClick={() => void agentSvc.provision()} disabled={agentSvc.provisioning} className="mt-1">
