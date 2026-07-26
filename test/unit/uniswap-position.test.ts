@@ -30,6 +30,7 @@ function pool(fee: number): PoolInfo {
     tvlToken0: 0n,
     tvlToken1: 0n,
     apy: null,
+    tvlUSD: null,
   }
 }
 

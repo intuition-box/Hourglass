@@ -2,13 +2,15 @@ import { type Address } from 'viem'
 import { mainnet, base, baseSepolia } from 'viem/chains'
 import { USDC_ADDRESS } from './supported-chains'
 
-/** Uniswap v3 Factory, per chain. Only Base Sepolia is wired — the web app's chain. */
+/** Uniswap v3 Factory, per chain. */
 export const UNISWAP_V3_FACTORY: Record<number, Address> = {
+  [base.id]: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD',
   [baseSepolia.id]: '0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24',
 }
 
 /** Uniswap v3 NonfungiblePositionManager, per chain. */
 export const UNISWAP_V3_POSITION_MANAGER: Record<number, Address> = {
+  [base.id]: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
   [baseSepolia.id]: '0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2',
 }
 
@@ -22,6 +24,19 @@ export const UNISWAP_V3_POSITION_MANAGER: Record<number, Address> = {
 export const UNIVERSAL_ROUTER: Record<number, Address> = {
   [mainnet.id]: '0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af',
   [base.id]: '0x6fF5693b99212Da76ad316178A184AB56D299b43',
+}
+
+/**
+ * The Graph subgraph id for Uniswap v3, per chain — feeds the Yield page's APY
+ * estimate (`fetchPoolApy`). Only a chain with real trading activity has a
+ * subgraph indexers actually serve; Base Sepolia does not (checked against The
+ * Graph's explorer: the only two Base-Sepolia-labeled subgraphs there are either
+ * mislabeled — indexing Arbitrum Sepolia — or years-stale with zero curation
+ * signal), so it's intentionally left unmapped rather than pointed at a dead
+ * endpoint. `fetchPoolApy` returns null for any chain missing here.
+ */
+export const UNISWAP_V3_SUBGRAPH_ID: Record<number, string> = {
+  [base.id]: 'FUbEPQw1oMghy39fwWBFY5fE6MXPXZQtjncQy2cXdrNS',
 }
 
 /**
@@ -54,6 +69,10 @@ export interface CandidateToken {
  * explicit — Base Sepolia has near-zero real testnet liquidity outside these.
  */
 export const CANDIDATE_TOKENS: Record<number, CandidateToken[]> = {
+  [base.id]: [
+    { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
+    { address: USDC_ADDRESS[base.id], symbol: 'USDC', decimals: 6 },
+  ],
   [baseSepolia.id]: [
     { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH', decimals: 18 },
     { address: USDC_ADDRESS[baseSepolia.id], symbol: 'USDC', decimals: 6 },

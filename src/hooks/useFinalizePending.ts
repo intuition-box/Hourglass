@@ -55,20 +55,23 @@ function localRecordFor(messageHash: Hex): { organization?: OrganizationInput; d
 }
 
 /**
- * The finalize pass itself, callable outside the mount effect. Returns the number of
- * mandates it published. Extracted so the Limit order tab can run it on demand: the
- * agent discovers its mandate on Intuition, so starting one before this has run would
- * fail on a mandate that is merely unindexed.
+ * The finalize pass itself, callable outside the mount effect. Extracted so the Limit
+ * order tab can run it on demand: the agent discovers its mandate on Intuition, so
+ * starting one before this has run would fail on a mandate that is merely unindexed.
+ *
+ * Returns the atom id published per delegationHash. The pin is deterministic (ADR 0005),
+ * so a caller that knows its own hash learns exactly which atom to expect — and an empty
+ * result for a hash it just signed means the poke did not take.
  */
 export async function finalizePending(
   chainId: number,
   safeAddress: Address,
   isCancelled: () => boolean = () => false,
-): Promise<number> {
-  if (!intuitionPublisherUrl()) return 0
+): Promise<Map<string, string>> {
+  const published = new Map<string, string>()
+  if (!intuitionPublisherUrl()) return published
   const messages = await listSafeMessages(chainId, safeAddress)
   const poked = pokedSet()
-  let published = 0
   for (const msg of messages) {
     if (isCancelled()) return published
     if (!isMessageComplete(msg)) continue
@@ -79,8 +82,8 @@ export async function finalizePending(
     try {
       const res = await pokePublish({ chainId, safeAddress, messageHash: msg.messageHash, organization })
       markPoked(msg.messageHash.toLowerCase())
-      published += 1
       if (delegationHash) {
+        published.set(delegationHash.toLowerCase(), res.result.atoms.delegationJson)
         setDelegationIntuition(delegationHash, {
           atomId: res.result.atoms.delegationJson,
           network: res.result.network,

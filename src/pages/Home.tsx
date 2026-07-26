@@ -5,6 +5,8 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
+import { useSafePositions } from '../hooks/useSafePositions'
+import { Positions } from '../ui/Positions'
 import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { portalAtomUrl } from '../lib/intuition'
 import { SubscriptionDetail } from './SubscriptionDetail'
@@ -12,7 +14,9 @@ import { Card, Btn, StatusBadge, Payee, STATUS, type Status } from '../ui/compon
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 import { findChain, rpcUrl } from '../config/supported-chains'
 
-type Page = 'home' | 'create' | 'redeem'
+// Kept in step with App.tsx's Page union — this had drifted behind the routes added
+// since, so Overview could not link to them.
+type Page = 'home' | 'create' | 'redeem' | 'yield' | 'strategy' | 'limit' | 'aqua'
 
 function tintFor(addr: string): { tint: string; logo: string } {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
@@ -100,6 +104,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const [error, setError] = useState<string | null>(null)
   const [safeInfo, setSafeInfo] = useState<{ owners: string[]; threshold: number } | null>(null)
   const [subs, setSubs] = useState<StoredDelegation[]>(() => getDelegations())
+  const positions = useSafePositions(safe.safeAddress as Address, safe.chainId)
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
   // Limit orders are one-shot; once fired on-chain, show them as Executed not Active,
   // with a link to the redemption tx. Keyed by delegationHash → explorer URL ('' = no link).
@@ -257,6 +262,21 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
           <div className="text-xs text-dim mt-1">{active.length} active mandate{active.length === 1 ? '' : 's'}</div>
         </Card>
       </div>
+
+      {/* Liquidity positions — read from the chain, so they survive a reload and show up
+          whoever minted them. */}
+      {(positions.positions.length > 0 || positions.loading) && (
+        <div className="mb-6">
+          <div className="flex items-end justify-between gap-4 mb-3">
+            <div>
+              <h2 className="text-lg font-bold tracking-tight text-ink">Investments</h2>
+              <p className="text-dim text-xs mt-0.5">Liquidity held by this Safe.</p>
+            </div>
+            <Btn kind="ghost" onClick={() => onNavigate('yield')}>Manage</Btn>
+          </div>
+          <Positions positions={positions.positions} loading={positions.loading} />
+        </div>
+      )}
 
       {/* Subscriptions grid */}
       {subs.length === 0 ? (

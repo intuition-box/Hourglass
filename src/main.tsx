@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { wagmiConfig } from './config/chains'
 import App from './App'
 import Verify from './pages/Verify'
-import { Logo } from './ui/components'
+import { Logo, Card } from './ui/components'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -24,9 +24,35 @@ const isVerify = window.location.pathname === '/safe-app/verify'
 // landing, which now lives at the domain root.
 const inSafeIframe = window.self !== window.top
 const isUtilityRoute = isPitch || isVerify
+// Only PROD has a separate site serving '/' to redirect to. In dev there is no
+// such site, so redirecting to '/' just reloads this same script and loops —
+// show instructions instead of flickering forever.
+const shouldRedirectToWebsite = !isUtilityRoute && !inSafeIframe && import.meta.env.PROD
+const shouldShowDevInstructions = !isUtilityRoute && !inSafeIframe && import.meta.env.DEV
 
-if (!isUtilityRoute && !inSafeIframe) {
+if (shouldRedirectToWebsite) {
   window.location.replace('/')
+} else if (shouldShowDevInstructions) {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <div className="min-h-screen bg-base flex items-center justify-center p-6">
+        <Card className="max-w-md p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Logo size={28} />
+            <span className="text-sm font-semibold text-ink">Dev preview</span>
+          </div>
+          <p className="text-sm text-dim leading-relaxed">
+            This app only runs inside a Safe iframe — it reads the connected chain and
+            account from the Safe Apps SDK, which requires a real Safe context.
+          </p>
+          <p className="text-sm text-dim leading-relaxed mt-3">
+            To preview it: open your Safe → Apps → My custom apps → add{' '}
+            <code className="font-mono text-ink">{window.location.origin}/safe-app/</code>.
+          </p>
+        </Card>
+      </div>
+    </React.StrictMode>,
+  )
 } else {
   ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

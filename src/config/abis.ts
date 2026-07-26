@@ -143,7 +143,11 @@ export const UniswapV3PoolABI = [
 ] as const
 
 // MintParams is a single tuple argument (NonfungiblePositionManager.mint) — only
-// the entry point this app calls is declared, not the full position-manager ABI.
+// the entry points this app calls are declared, not the full position-manager ABI.
+// `balanceOf`/`tokenOfOwnerByIndex`/`positions` locate the Safe's live position for a
+// manual compound redeem (src/lib/redeemCompound.ts); `collect`/`increaseLiquidity` are
+// also encoded standalone there (the mandate redeems them via the DelegationManager, not
+// a direct call — declared here so `simulateContract`/`encodeFunctionData` can type them).
 export const UniswapV3PositionManagerABI = [
   {
     inputs: [
@@ -168,6 +172,88 @@ export const UniswapV3PositionManagerABI = [
     name: 'mint',
     outputs: [
       { name: 'tokenId', type: 'uint256' },
+      { name: 'liquidity', type: 'uint128' },
+      { name: 'amount0', type: 'uint256' },
+      { name: 'amount1', type: 'uint256' },
+    ],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'owner', type: 'address' }],
+    name: 'balanceOf',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'index', type: 'uint256' },
+    ],
+    name: 'tokenOfOwnerByIndex',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [{ name: 'tokenId', type: 'uint256' }],
+    name: 'positions',
+    outputs: [
+      { name: 'nonce', type: 'uint96' },
+      { name: 'operator', type: 'address' },
+      { name: 'token0', type: 'address' },
+      { name: 'token1', type: 'address' },
+      { name: 'fee', type: 'uint24' },
+      { name: 'tickLower', type: 'int24' },
+      { name: 'tickUpper', type: 'int24' },
+      { name: 'liquidity', type: 'uint128' },
+      { name: 'feeGrowthInside0LastX128', type: 'uint256' },
+      { name: 'feeGrowthInside1LastX128', type: 'uint256' },
+      { name: 'tokensOwed0', type: 'uint128' },
+      { name: 'tokensOwed1', type: 'uint128' },
+    ],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'tokenId', type: 'uint256' },
+          { name: 'recipient', type: 'address' },
+          { name: 'amount0Max', type: 'uint128' },
+          { name: 'amount1Max', type: 'uint128' },
+        ],
+      },
+    ],
+    name: 'collect',
+    outputs: [
+      { name: 'amount0', type: 'uint256' },
+      { name: 'amount1', type: 'uint256' },
+    ],
+    stateMutability: 'payable',
+    type: 'function',
+  },
+  {
+    inputs: [
+      {
+        name: 'params',
+        type: 'tuple',
+        components: [
+          { name: 'tokenId', type: 'uint256' },
+          { name: 'amount0Desired', type: 'uint256' },
+          { name: 'amount1Desired', type: 'uint256' },
+          { name: 'amount0Min', type: 'uint256' },
+          { name: 'amount1Min', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' },
+        ],
+      },
+    ],
+    name: 'increaseLiquidity',
+    outputs: [
       { name: 'liquidity', type: 'uint128' },
       { name: 'amount0', type: 'uint256' },
       { name: 'amount1', type: 'uint256' },

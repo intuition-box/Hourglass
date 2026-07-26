@@ -1,6 +1,6 @@
-import { erc20Abi, zeroAddress, type Address, type PublicClient } from 'viem'
+import { erc20Abi, formatUnits, zeroAddress, type Address, type PublicClient } from 'viem'
 import { UniswapV3FactoryABI, UniswapV3PoolABI } from '../config/abis'
-import { UNISWAP_V3_FACTORY, FEE_TIERS, CANDIDATE_TOKENS, type CandidateToken } from '../config/uniswap'
+import { UNISWAP_V3_FACTORY, UNISWAP_V3_SUBGRAPH_ID, FEE_TIERS, CANDIDATE_TOKENS, type CandidateToken } from '../config/uniswap'
 
 export interface PoolInfo {
   poolAddress: Address
@@ -15,6 +15,8 @@ export interface PoolInfo {
   tvlToken1: bigint
   /** Annualized fee yield estimate from the subgraph, or null if unavailable. */
   apy: number | null
+  /** USD-denominated TVL from the subgraph, or null if unavailable — prefer this over tvlToken0/1 when present. */
+  tvlUSD: number | null
 }
 
 /**
@@ -69,49 +71,135 @@ export async function discoverPools(client: PublicClient, chainId: number): Prom
         tvlToken0,
         tvlToken1,
         apy: null,
+        tvlUSD: null,
       })
     }
   }
   return found
 }
 
-interface PoolDayData {
-  feesUSD: string
-  tvlUSD: string
+// The only stablecoin the app's candidate-token list currently includes. Its
+// balance can stand in for its USD value without an external price feed —
+// this is an approximation (assumes the peg holds), not an oracle-verified figure.
+const STABLECOIN_SYMBOLS = new Set(['USDC'])
+
+export interface PoolValueShare {
+  pct0: number
+  pct1: number
+  /**
+   * The whole pool's value in USD, estimated by pricing the non-stable side
+   * off the pool's own rate and using the stablecoin side's balance as its $
+   * value. Null when neither token0 nor token1 is a recognized stablecoin —
+   * there's then no $ anchor to convert through.
+   */
+  usdEstimate: number | null
 }
 
 /**
- * Best-effort 24h-fees / TVL annualized estimate from the official Uniswap
- * subgraph. Base Sepolia has thin real trading, so an empty/missing result is
- * the expected common case — this returns null rather than a fabricated
- * number whenever the endpoint isn't configured, unreachable, or has no rows.
+ * Price of token0 in terms of token1 (human units), from the pool's own
+ * `sqrtPriceX96` — no external feed. This is the exact ratio a **full-range**
+ * mint must be deposited at: Uniswap can only mint liquidity proportional to
+ * the current price, so a mismatched amount0:amount1 leaves one side mostly
+ * unused and can trip the mint's own slippage check (`amount0Min`/`amount1Min`
+ * in `uniswapPosition.ts`) — see the Yield tab's amount-matching inputs.
  */
-export async function fetchPoolApy(poolAddress: Address): Promise<number | null> {
-  const url = import.meta.env.VITE_UNISWAP_SUBGRAPH_URL
-  if (!url) return null
+export function priceOf0In1(pool: Pick<PoolInfo, 'sqrtPriceX96' | 'token0' | 'token1'>): number {
+  const sqrtPrice = Number(pool.sqrtPriceX96) / 2 ** 96
+  return sqrtPrice * sqrtPrice * 10 ** (pool.token0.decimals - pool.token1.decimals)
+}
+
+/**
+ * Each token's share of the pool's value, derived only from the pool's own
+ * on-chain price (`sqrtPriceX96`) and reserves — no USD price feed needed, so
+ * it works even where the subgraph doesn't (e.g. Base Sepolia). Prices token0
+ * in terms of token1 and compares like-for-like, so "50/50" here means equal
+ * *value*, not equal raw token counts. `Number()` on the bigints loses
+ * precision past 2^53, which is fine — this feeds a percentage bar, not a
+ * financial calculation. Null only if the pool has no price or no balance to
+ * compare (shouldn't happen for a pool with liquidity > 0).
+ */
+export function poolValueShare(pool: PoolInfo): PoolValueShare | null {
+  const amount0 = Number(formatUnits(pool.tvlToken0, pool.token0.decimals))
+  const amount1 = Number(formatUnits(pool.tvlToken1, pool.token1.decimals))
+  const value0In1 = amount0 * priceOf0In1(pool)
+  const totalInToken1 = value0In1 + amount1
+  if (!Number.isFinite(totalInToken1) || totalInToken1 <= 0) return null
+  const pct0 = value0In1 / totalInToken1
+
+  let usdEstimate: number | null = null
+  if (STABLECOIN_SYMBOLS.has(pool.token1.symbol)) usdEstimate = totalInToken1
+  else if (STABLECOIN_SYMBOLS.has(pool.token0.symbol)) usdEstimate = amount0 + amount1 / priceOf0In1(pool)
+
+  return { pct0, pct1: 1 - pct0, usdEstimate }
+}
+
+interface LiquidityPoolQueryResult {
+  totalValueLockedUSD: string
+  dailySnapshots: { dailySupplySideRevenueUSD: string }[]
+}
+
+export interface PoolMetrics {
+  /** Annualized fee yield (last daily LP revenue / TVL × 365), or null if unavailable. */
+  apy: number | null
+  /** USD-denominated TVL, or null if unavailable. */
+  tvlUSD: number | null
+}
+
+const NULL_METRICS: PoolMetrics = { apy: null, tvlUSD: null }
+
+/**
+ * Best-effort TVL + fee-yield read from a Messari-standard subgraph (the
+ * `liquidityPool` / `dailySnapshots` schema — NOT the original Uniswap Labs
+ * `pool` / `poolDayData` schema most docs show; verified live against the
+ * mapped Base subgraph before wiring this). Only chains with a mapped
+ * `UNISWAP_V3_SUBGRAPH_ID` (currently Base mainnet — Base Sepolia has no
+ * indexer serving one) return real data. TVL and APY are reported
+ * independently: a pool can have a real `totalValueLockedUSD` with no recent
+ * daily snapshot (apy stays null) — this returns nulls rather than a
+ * fabricated number whenever the chain has no subgraph, the key is unset, the
+ * endpoint is unreachable, or the pool has no rows there.
+ */
+export async function fetchPoolMetrics(poolAddress: Address, chainId: number): Promise<PoolMetrics> {
+  const subgraphId = UNISWAP_V3_SUBGRAPH_ID[chainId]
+  if (!subgraphId) return NULL_METRICS
 
   const apiKey = import.meta.env.VITE_THEGRAPH_API_KEY
+  if (!apiKey) return NULL_METRICS
+
+  const url = `https://gateway.thegraph.com/api/subgraphs/id/${subgraphId}`
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        query: `{ pool(id: "${poolAddress.toLowerCase()}") { poolDayData(first: 1, orderBy: date, orderDirection: desc) { feesUSD tvlUSD } } }`,
+        query: `{ liquidityPool(id: "${poolAddress.toLowerCase()}") { totalValueLockedUSD dailySnapshots(first: 1, orderBy: day, orderDirection: desc) { dailySupplySideRevenueUSD } } }`,
       }),
     })
-    if (!res.ok) return null
-    const json = (await res.json()) as { data?: { pool?: { poolDayData?: PoolDayData[] } } }
-    const day = json.data?.pool?.poolDayData?.[0]
-    if (!day) return null
-    const tvlUSD = Number(day.tvlUSD)
-    const feesUSD = Number(day.feesUSD)
-    if (!Number.isFinite(tvlUSD) || tvlUSD <= 0 || !Number.isFinite(feesUSD)) return null
-    return (feesUSD / tvlUSD) * 365
-  } catch {
-    return null
+    if (!res.ok) {
+      console.error('[fetchPoolMetrics] HTTP', res.status, await res.text())
+      return NULL_METRICS
+    }
+    const json = (await res.json()) as { data?: { liquidityPool?: LiquidityPoolQueryResult }; errors?: unknown }
+    if (json.errors) {
+      console.error('[fetchPoolMetrics] GraphQL errors', json.errors)
+      return NULL_METRICS
+    }
+    const lp = json.data?.liquidityPool
+    if (!lp) {
+      console.error('[fetchPoolMetrics] no liquidityPool for', poolAddress, json)
+      return NULL_METRICS
+    }
+    const tvlUSD = Number(lp.totalValueLockedUSD)
+    if (!Number.isFinite(tvlUSD) || tvlUSD <= 0) return NULL_METRICS
+    const dailyRevenueUSD = Number(lp.dailySnapshots?.[0]?.dailySupplySideRevenueUSD)
+    const apy = Number.isFinite(dailyRevenueUSD) && dailyRevenueUSD >= 0 ? (dailyRevenueUSD / tvlUSD) * 365 : null
+    return { apy, tvlUSD }
+  } catch (err) {
+    console.error('[fetchPoolMetrics] fetch threw', err)
+    return NULL_METRICS
   }
 }
 

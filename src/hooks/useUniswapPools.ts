@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPublicClient, http, type PublicClient } from 'viem'
 import { findChain, rpcUrl } from '../config/supported-chains'
-import { discoverPools, fetchPoolApy, rankPools, type PoolInfo } from '../lib/uniswapDiscovery'
+import { discoverPools, fetchPoolMetrics, rankPools, type PoolInfo } from '../lib/uniswapDiscovery'
 
 export interface UniswapPools {
   loading: boolean
@@ -34,7 +34,7 @@ export function useUniswapPools(chainId: number): UniswapPools {
       const client = createPublicClient({ chain, transport: http(rpcUrl(chainId)) }) as PublicClient
       const found = await discoverPools(client, chainId)
       const withApy = await Promise.all(
-        found.map(async (pool) => ({ ...pool, apy: await fetchPoolApy(pool.poolAddress) })),
+        found.map(async (pool) => ({ ...pool, ...(await fetchPoolMetrics(pool.poolAddress, chainId)) })),
       )
       if (!cancelled) setState({ loading: false, error: null, pools: rankPools(withApy) })
     })().catch((e) => {

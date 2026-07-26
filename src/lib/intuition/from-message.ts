@@ -10,6 +10,7 @@ import {
   findBalanceChangeCaveat,
   decodeBalanceChangeTerms,
   findApproveTargetToken,
+  findExactExecutionCaveat,
   periodFromSeconds,
 } from './discover'
 import type { DelegationDetails } from './delegation-document'
@@ -167,6 +168,11 @@ export function detailsFromDelegation(
   // an allowance so the paired swap can run.
   if (findApproveTargetToken(delegation, chainId)) {
     return { kind: 'approve', amount: '', tokenSymbol: token.symbol, period: '' }
+  }
+  // A yield step pins an exact execution: no token, no amount, no period. Matched last
+  // so it never shadows a mandate that does carry one.
+  if (findExactExecutionCaveat(delegation, chainId)) {
+    return { kind: 'yield', amount: '', tokenSymbol: '', period: '' }
   }
   return null
 }

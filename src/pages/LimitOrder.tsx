@@ -19,12 +19,13 @@ import { saveDelegation } from '../lib/storage'
 import { Card, Btn, Mono, CopyChip } from '../ui/components'
 import { useAgentRun } from '../hooks/useAgentRun'
 import { finalizePending } from '../hooks/useFinalizePending'
+import { discoverIncomingDelegations } from '../lib/intuition/discover'
 import type { AgentInstruction } from '../lib/agent-service'
 import { Block, Field, Segmented, PreviewRow } from '../ui/form'
+import { dec } from '../lib/numeric-input'
 import { IconLock, IconCheck, IconAlert } from '../ui/icons'
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
-const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
 
 /** One redeem costs ~440k gas on Base; this covers it with room, and it is the loss
  *  ceiling if the order never fills (ADR 0007 — the residue has no return path yet). */
@@ -58,6 +59,7 @@ export default function LimitOrder() {
   const [permit2Busy, setPermit2Busy] = useState(false)
   const [fundingAgent, setFundingAgent] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [publishStatus, setPublishStatus] = useState<string | null>(null)
 
   const useCustom = tokenMode === 'custom'
   const fundingAddress = useCustom ? customToken : (selectedToken?.address ?? '')
@@ -157,23 +159,61 @@ export default function LimitOrder() {
     }
   }
 
+  /**
+   * Wait until the mandate is actually discoverable, not merely published. The poke
+   * returns as soon as the backend has written; the graph indexes after that, and an
+   * agent started in between finds nothing and exits. Polls the same discovery path
+   * the runner uses, so "visible here" means "visible to the agent".
+   */
+  async function waitForIndexing(hash: string, deadlineMs = 120_000): Promise<boolean> {
+    const started = Date.now()
+    while (Date.now() - started < deadlineMs) {
+      try {
+        // Re-publish each round: a signature finalised after the first pass would
+        // otherwise never be picked up (see the yield rail, same cause).
+        await finalizePending(safe.chainId, safe.safeAddress as Address)
+        const found = await discoverIncomingDelegations(effectiveAgent as Address, safe.chainId)
+        if (found.some((d) => d.meta.delegationHash?.toLowerCase() === hash.toLowerCase())) return true
+      } catch {
+        // transient graph error — keep polling until the deadline
+      }
+      await new Promise((r) => setTimeout(r, 4000))
+    }
+    return false
+  }
+
   async function handleStartAgent() {
     setError(null)
     if (!recap) return
+    const instruction = JSON.parse(recap) as AgentInstruction
+
     setPublishing(true)
     try {
-      // Publish before starting. The agent discovers its mandate on Intuition, and
-      // until this runs the mandate is signed but unindexed — the run would exit on
-      // "not found on Intuition yet" and read as a failure. This is the same pass the
-      // app does on open; doing it here means the operator never has to reload.
+      // Publish, then wait for the graph to catch up. Both have to happen before the
+      // agent starts: it discovers its mandate on Intuition, so an unindexed mandate
+      // makes a correct agent exit immediately and look broken.
+      // Publish, ignoring whether this particular call did the writing: the poked set
+      // skips a mandate already published in an earlier click, and that is a success,
+      // not a failure. Only discoverability decides — checked next, on the very path
+      // the agent uses.
       await finalizePending(safe.chainId, safe.safeAddress as Address)
-    } catch {
-      // Already-published is the common case and it is a no-op; a real failure
-      // surfaces as the agent not finding the mandate, which says more than we could.
+      setPublishStatus('Waiting for the mandate to be indexed…')
+      const indexed = await waitForIndexing(instruction.delegationHash)
+      if (!indexed) {
+        setError('The mandate is not discoverable on Intuition yet — indexing can lag. Start the agent again in a moment.')
+        return
+      }
+    } catch (err) {
+      // Surfacing this matters: swallowing it produced a bare "exited with code 1"
+      // from the agent, which said nothing about the actual cause.
+      setError(err instanceof Error ? `Could not publish the mandate: ${err.message}` : 'Could not publish the mandate')
+      return
     } finally {
       setPublishing(false)
+      setPublishStatus(null)
     }
-    await agentSvc.start(JSON.parse(recap) as AgentInstruction)
+
+    await agentSvc.start(instruction)
   }
 
   async function handleSign() {
@@ -418,7 +458,7 @@ export default function LimitOrder() {
                       disabled={publishing || agentSvc.starting || agentSvc.run?.state === 'running'}
                       className="w-full"
                     >
-                      {publishing ? 'Publishing the mandate…' : agentSvc.starting ? 'Starting…' : agentSvc.run ? 'Restart agent' : 'Start agent'}
+                      {publishing ? (publishStatus ?? 'Publishing the mandate…') : agentSvc.starting ? 'Starting…' : agentSvc.run ? 'Restart agent' : 'Start agent'}
                     </Btn>
                     {agentSvc.run && (
                       <div className="rounded-lg bg-raised ring-1 ring-line p-3 space-y-1">

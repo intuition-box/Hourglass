@@ -155,9 +155,12 @@ do not guess absolute paths — run 'ls' first and work with relative paths from
 There is no human to hand anything back to: the wallet is already funded and the mandate
 is already signed to it, so skip every step that asks the operator to act.
 
-Your job: install dependencies if needed, then run the limit-order runner against the
-instruction below and report what happened. Prefer running the bundled runner over
-reimplementing its logic.
+Your job: install dependencies if needed, then run the runner that matches the
+instruction's hourglassStrategy against it, and report what happened. Prefer running the
+bundled runner over reimplementing its logic.
+
+  limitOrder -> run-limit-order.ts   (watches the price, fills once)
+  yield      -> run-yield.ts         (redeems the plan's three pinned steps in order)
 
 The environment already carries AGENT_PRIVATE_KEY, UNISWAP_API_KEY and INTUITION_NETWORK.
 Never print, copy or transmit AGENT_PRIVATE_KEY.

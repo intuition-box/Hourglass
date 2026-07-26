@@ -28,7 +28,7 @@ export interface DelegationDocument {
  * (erc20Streaming), or a strategy mandate (erc20BalanceChange — a per-swap spend
  * cap for an agent, e.g. DCA / range).
  */
-export type DelegationKind = 'subscription' | 'stream' | 'dca' | 'approve'
+export type DelegationKind = 'subscription' | 'stream' | 'dca' | 'approve' | 'yield'
 
 export interface DelegationDetails {
   kind: DelegationKind
@@ -50,6 +50,7 @@ const KIND_LABEL: Record<DelegationKind, string> = {
   stream: 'Stream',
   dca: 'Strategy',
   approve: 'Approve',
+  yield: 'Yield',
 }
 
 const KIND_ENFORCER: Record<DelegationKind, string> = {
@@ -57,6 +58,7 @@ const KIND_ENFORCER: Record<DelegationKind, string> = {
   stream: 'erc20Streaming',
   dca: 'erc20BalanceChange',
   approve: 'exactCalldata',
+  yield: 'exactExecution',
 }
 
 /** Cap on the derived amount string — a token with absurd `decimals` can make
@@ -78,6 +80,11 @@ export function describeDelegation(details: DelegationDetails): string {
     // The limit-order companion: it grants the router an allowance on the funding
     // token so the paired swap can run. No amount/period in the display.
     return `${KIND_LABEL[details.kind]} delegation using the ${enforcer} enforcer, granting a ${symbol} allowance for a paired limit-order swap.`
+  }
+  if (details.kind === 'yield') {
+    // One step of a yield deposit plan. The caveat pins target, method and calldata, so
+    // there is no amount or period to state — what it authorises IS that one execution.
+    return `${KIND_LABEL[details.kind]} delegation using the ${enforcer} enforcer, pinned to one exact pre-approved call of a liquidity deposit plan.`
   }
   if (details.kind === 'dca') {
     // A strategy mandate bounds the loss per swap, not an amount per period.

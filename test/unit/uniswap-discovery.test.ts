@@ -22,6 +22,7 @@ function pool(overrides: Partial<PoolInfo>): PoolInfo {
     tvlToken0: 1000n,
     tvlToken1: 1000n,
     apy: null,
+    tvlUSD: null,
     ...overrides,
   }
 }

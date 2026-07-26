@@ -17,10 +17,10 @@ import { findChain, rpcUrl } from '../config/supported-chains'
 import { saveDelegation } from '../lib/storage'
 import { Card, Btn, Mono, CopyChip } from '../ui/components'
 import { Block, Field, Segmented, PreviewRow } from '../ui/form'
+import { dec } from '../lib/numeric-input'
 import { IconLock, IconCheck, IconAlert } from '../ui/icons'
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
-const dec = (v: string) => v.replace(',', '.').replace(/[^\d.]/g, '')
 
 type SignStep = 'idle' | 'preparing' | 'signing' | 'done'
 type Frequency = 'daily' | 'weekly' | 'monthly'

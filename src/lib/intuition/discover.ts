@@ -185,6 +185,43 @@ export function findApproveTargetToken(delegation: DelegationStruct, chainId: nu
   return getAddress(target.terms)
 }
 
+/** Canonical ExactExecutionEnforcer (deterministic across chains) from the SDK. */
+const CANONICAL_EXACT_EXECUTION_ENFORCER = '0x146713078D39eCC1F5338309c28405ccf85Abfbb'
+
+export interface ExactExecutionTerms {
+  target: Address
+  value: bigint
+  callData: Hex
+}
+
+/**
+ * Decode the exactExecution caveat terms: target(20) + value(32) + callData(rest).
+ * The yield rail pins each step this way, so these terms ARE the execution the agent
+ * has to resubmit — there is nothing else to reconstruct it from.
+ */
+export function decodeExactExecutionTerms(terms: Hex): ExactExecutionTerms {
+  return {
+    target: getAddress(sliceHex(terms, 0, 20)),
+    value: hexToBigInt(sliceHex(terms, 20, 52)),
+    callData: sliceHex(terms, 52),
+  }
+}
+
+/**
+ * Match both the HourGlass instance and the canonical SDK one. Mandates signed before
+ * ExactExecutionEnforcer was routed through the HourGlass block carry the canonical
+ * address; dropping it here would make those plans permanently undiscoverable.
+ */
+export function findExactExecutionCaveat(
+  delegation: DelegationStruct,
+  chainId: number,
+): { enforcer: Address; terms: Hex } | null {
+  const enforcers = [CANONICAL_EXACT_EXECUTION_ENFORCER, getAddresses(chainId).hourglass?.exactExecutionEnforcer]
+    .filter((a): a is Address => Boolean(a))
+    .map((a) => a.toLowerCase())
+  return delegation.caveats.find((c) => enforcers.includes(c.enforcer.toLowerCase())) ?? null
+}
+
 /**
  * Whether the mandate carries a limitedCalls caveat — the marker of a limit order
  * (a single price-triggered swap) versus a recurring DCA. Both carry a
@@ -237,6 +274,13 @@ const RELATIONSHIPS = `query($objectIds: [String!], $pred: String!) {
   triples(where: { predicate: { term_id: { _eq: $pred } }, object_id: { _in: $objectIds } }) {
     term_id
     subject { data }
+  }
+}`
+/** The mirror of RELATIONSHIPS: delegations a delegator GRANTED, not ones it received. */
+const RELATIONSHIPS_BY_SUBJECT = `query($subjectIds: [String!], $pred: String!) {
+  triples(where: { predicate: { term_id: { _eq: $pred } }, subject_id: { _in: $subjectIds } }) {
+    term_id
+    object { data }
   }
 }`
 const CONTEXT = `query($relIds: [String!], $pred: String!) {
@@ -335,6 +379,25 @@ async function toStoredDelegation(
     }
   }
 
+  // The yield rail: each step of a deposit plan pins its exact execution. There is no
+  // amount or token to decode — the calldata IS the mandate, and the agent's only job
+  // is to resubmit it. targetAddress + calldataArgs are what the runner redeems with.
+  const pinned = findExactExecutionCaveat(delegation, chainId)
+  if (pinned) {
+    const { target, callData } = decodeExactExecutionTerms(pinned.terms)
+    return {
+      delegation,
+      meta: {
+        ...common,
+        scopeType: 'custom',
+        status: 'signed',
+        targetAddress: target,
+        methodSelector: sliceHex(callData, 0, 4),
+        calldataArgs: callData,
+      },
+    }
+  }
+
   return null
 }
 
@@ -380,6 +443,66 @@ export async function discoverIncomingDelegations(
           delegation: doc.delegation,
         }
         return toStoredDelegation(named, uri, delegatorByRel.get(t.object_id) ?? '', recipientChainId)
+      } catch {
+        return null
+      }
+    }),
+  )
+  return results.filter((d): d is StoredDelegation => d !== null)
+}
+
+/**
+ * Delegations a Safe GRANTED — the mirror of `discoverIncomingDelegations`, which walks
+ * the same graph from the recipient's side.
+ *
+ * This is what survives a reload. The app holds no record of which agent a plan was
+ * signed to, and after a refresh the operator has no way back to a half-finished plan;
+ * the graph does, and each mandate names its own delegate, so the agent address comes
+ * back with it.
+ *
+ * Traverses by the **module** address (`delegation.delegator`), not the Safe address —
+ * the module is what signs, and it is what the ontology records.
+ */
+export async function discoverBySafe(
+  moduleAddress: Address,
+  chainId: number,
+): Promise<StoredDelegation[]> {
+  const cfg = READ[resolveIntuitionNetwork()]
+  if (!cfg.delegateTo || !cfg.inContextOf) return [] // predicates not yet on this graph
+
+  const { atoms } = await gql<{ atoms: { term_id: string }[] }>(cfg.graphqlUrl, ATOM_BY_DATA, {
+    data: caip10Uri(chainId, moduleAddress),
+  })
+  const delegatorAtomIds = atoms.map((a) => a.term_id)
+  if (delegatorAtomIds.length === 0) return []
+
+  const rels = await gql<{ triples: { term_id: string; object: { data: string } }[] }>(
+    cfg.graphqlUrl,
+    RELATIONSHIPS_BY_SUBJECT,
+    { subjectIds: delegatorAtomIds, pred: cfg.delegateTo },
+  )
+  if (rels.triples.length === 0) return []
+
+  const ctx = await gql<{
+    triples: { object_id: string; subject: { data: string; value?: { thing?: { name?: string; description?: string } } } }[]
+  }>(cfg.graphqlUrl, CONTEXT, { relIds: rels.triples.map((t) => t.term_id), pred: cfg.inContextOf })
+
+  const delegatorData = caip10Uri(chainId, moduleAddress)
+  const results = await Promise.all(
+    ctx.triples.map(async (t) => {
+      const uri = t.subject?.data
+      if (!uri || !uri.startsWith('ipfs://')) return null
+      try {
+        const res = await fetch(ipfsToHttp(uri))
+        if (!res.ok) return null
+        const doc = (await res.json()) as DelegationDocument
+        if (!doc?.delegation?.delegate) return null
+        const named: DelegationDocument = {
+          name: t.subject.value?.thing?.name,
+          description: t.subject.value?.thing?.description,
+          delegation: doc.delegation,
+        }
+        return toStoredDelegation(named, uri, delegatorData, chainId)
       } catch {
         return null
       }

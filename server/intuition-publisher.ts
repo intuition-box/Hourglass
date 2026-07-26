@@ -202,12 +202,14 @@ async function handlePublish(rt: Runtime, body: PublishBody): Promise<{ uri: str
   if (!ok) throw new Error('EIP-1271 verification failed')
 
   // 3. Resolve + sanitize token metadata, build display details from the caveat.
+  // A yield step pins an exact execution and names no token, so an absent token is not
+  // by itself a reason to refuse: only failing to describe the delegation at all is.
   const token = tokenFromDelegation(delegation, body.chainId)
-  if (!token) throw new Error('no known caveat in delegation')
-  const rawMeta = await readErc20Meta(app, token)
-  const meta = sanitizeTokenMeta({ address: token, ...rawMeta })
+  const meta = token
+    ? sanitizeTokenMeta({ address: token, ...(await readErc20Meta(app, token)) })
+    : { symbol: '', decimals: 18 }
   const details = detailsFromDelegation(delegation, body.chainId, { symbol: meta.symbol, decimals: meta.decimals })
-  if (!details) throw new Error('could not decode delegation details')
+  if (!details) throw new Error('no known caveat in delegation')
 
   // 4. Pin the document and write the ontology (isTermCreated guards dedup the mint).
   const doc = buildDelegationDocument({ delegation, details })

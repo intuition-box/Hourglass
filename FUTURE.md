@@ -109,6 +109,28 @@ Deferred ideas captured during tasks (per workflow rules — scope discipline).
   (`delegation.delegator`), not the Safe address itself — resolve it the same way
   the create flow predicts the module (factory `predictAddress`).
 
+- **[SECURITY] Per-period cap on the compound mandate (`increaseLiquidity` is
+  amount-unbounded).** The compound mandate (`src/lib/compoundDelegation.ts`)
+  scopes `collect` + `increaseLiquidity` on the PositionManager but does not cap
+  the `increaseLiquidity` amounts: a compromised agent could add more of the
+  Safe's own token balance into the LP than just the harvested fees (over-
+  allocation into the Safe's own position — not theft, but unbounded).
+
+  **Shipped mitigation (POC):** the "Enable compounding" setup approves a
+  *bounded* amount from the Safe to the PositionManager (not `MAX_UINT256`), so
+  the agent can never pull more than the approved sum — a real, non-zero blast-
+  radius cap. Weakness: it is a lifetime cap that `increaseLiquidity` consumes,
+  not a per-period bound, so it needs topping up.
+
+  **Pre-prod hardening (deferred, decided 2026-07-25 with team):** add an
+  on-chain per-period guard to the mandate — an `erc20BalanceChange`-style /
+  period cap enforcer bounding how much the Safe balance can drop per window.
+  This is the correct "Hereda" bound (periodic, not lifetime). Deferred because
+  the SDK's `erc20BalanceChange` builder rejects `balance <= 0n` (the same
+  `Decrease(0)` limit hit on the treasury-protection caveat), so it needs either
+  an SDK-level fix or a hand-encoded caveat + tests. Revisit before any mainnet
+  or real-treasury use.
+
 - **[SECURITY] Unbounded token metadata (`symbol`/`name`/`decimals`) is a
   hostile input.** `readErc20Meta` (`src/lib/erc20.ts:43`) reads a custom
   token's `symbol`/`name`/`decimals` from the contract with no bounds, and they

@@ -66,7 +66,7 @@ function runDir(id: string): string {
 function prepareRunDir(id: string): string {
   const dir = runDir(id)
   mkdirSync(dir, { recursive: true })
-  for (const file of ['run-limit-order.ts', 'run-dca.ts', 'package.json']) {
+  for (const file of ['run-limit-order.ts', 'run-yield.ts', 'run-dca.ts', 'package.json']) {
     const src = join(SCRIPTS_DIR, file)
     if (existsSync(src)) cpSync(src, join(dir, file))
   }
@@ -157,16 +157,20 @@ async function provisionByModel(): Promise<Run> {
 }
 
 interface Instruction {
-  hourglassStrategy: string
+  hourglassStrategy: 'limitOrder' | 'yield'
   chainId: number
   agent: string
-  delegationHash: string
+  /** Limit order only: the mandate the runner matches on. A yield plan is discovered
+   *  whole (three pinned steps addressed to this agent), so it carries no hash. */
+  delegationHash?: string
 }
 
 function parseInstruction(raw: unknown, expected: Address): Instruction {
   if (typeof raw !== 'object' || raw === null) throw new Error('instruction must be an object')
   const i = raw as Record<string, unknown>
-  if (i.hourglassStrategy !== 'limitOrder') throw new Error('only limitOrder is supported')
+  if (i.hourglassStrategy !== 'limitOrder' && i.hourglassStrategy !== 'yield') {
+    throw new Error(`unsupported strategy: ${String(i.hourglassStrategy)}`)
+  }
   if (!Number.isInteger(i.chainId) || !(i.chainId as number in CHAINS)) {
     throw new Error(`unsupported chainId (expected ${Object.keys(CHAINS).join(' or ')})`)
   }
@@ -174,7 +178,9 @@ function parseInstruction(raw: unknown, expected: Address): Instruction {
   if (i.agent.toLowerCase() !== expected.toLowerCase()) {
     throw new Error(`instruction agent ${i.agent} is not this run's address ${expected}`)
   }
-  if (typeof i.delegationHash !== 'string' || !isHex(i.delegationHash)) throw new Error('invalid delegationHash')
+  if (i.hourglassStrategy === 'limitOrder' && (typeof i.delegationHash !== 'string' || !isHex(i.delegationHash))) {
+    throw new Error('invalid delegationHash')
+  }
   return i as unknown as Instruction
 }
 

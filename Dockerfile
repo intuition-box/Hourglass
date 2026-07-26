@@ -21,6 +21,11 @@ ARG VITE_INTUITION_PUBLISHER_URL=/intuition
 ENV VITE_INTUITION_PUBLISHER_URL=$VITE_INTUITION_PUBLISHER_URL
 ARG VITE_INTUITION_PUBLISHER_SECRET
 ENV VITE_INTUITION_PUBLISHER_SECRET=$VITE_INTUITION_PUBLISHER_SECRET
+# The Graph gateway API key (free tier: thegraph.com/studio) — powers the Yield
+# page's APY/TVL estimate (src/lib/uniswapDiscovery.ts). Optional: unset just
+# means the Yield page falls back to its on-chain-only estimate.
+ARG VITE_THEGRAPH_API_KEY
+ENV VITE_THEGRAPH_API_KEY=$VITE_THEGRAPH_API_KEY
 # Build-time fallback for the Safe App's Intuition network. The runtime
 # INTUITION_NETWORK env var wins at container start (entrypoint writes it into
 # /safe-app/env.js) — so flipping testnet <-> mainnet needs no rebuild. This ARG
