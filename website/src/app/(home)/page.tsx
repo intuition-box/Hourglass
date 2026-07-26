@@ -1,7 +1,7 @@
-import Link from 'next/link';
 import { SafeAppRedirect } from '@/components/safe-app-redirect';
+import { HeroRings } from '@/components/magic-rings/HeroRings';
 import { AccessShowcase } from '@/components/hourglass-die';
-import { redeemRoute, safeGlobalUrl } from '@/lib/shared';
+import { safeGlobalUrl } from '@/lib/shared';
 
 export default function Home() {
   return (
@@ -10,6 +10,8 @@ export default function Home() {
       <SafeAppRedirect />
 
       <section className="relative flex min-h-[calc(100vh-56px)] flex-col overflow-hidden px-6 pb-14 pt-12 sm:px-12">
+        <HeroRings />
+
         {/* signature: a thin live stream down the right edge */}
         <div className="stream-edge absolute right-0 top-0 z-20 h-full w-1" aria-hidden="true" />
 
@@ -20,33 +22,24 @@ export default function Home() {
         </h1>
 
         <AccessShowcase>
-          <p className="max-w-[46ch] text-[17px] text-fd-muted-foreground">
-            One signature, capped on-chain. Every grain visible and auditable.
-          </p>
-
-          <div className="mt-8 flex flex-wrap items-center gap-[18px]">
-            <Link
-              href={redeemRoute}
+          {/* The mark's own mint, so the one CTA belongs to the same object as
+              the die and the logo rather than to the template it came from. */}
+          <div className="mt-9 flex flex-wrap items-center gap-[18px]">
+            <a
+              href={safeGlobalUrl}
+              target="_blank"
+              rel="noreferrer"
               className="group inline-flex items-stretch gap-1 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--color-base)]"
             >
-              <span className="inline-flex h-12 items-center rounded-full bg-[#f5f5f7] px-7 text-base font-semibold text-[#111] transition-opacity group-hover:opacity-90">
-                Claim your payment
+              <span className="inline-flex h-12 items-center rounded-full bg-[#7ff2cd] px-7 text-base font-semibold text-[#06231b] transition-opacity group-hover:opacity-90">
+                Add hourglass.box safe app
               </span>
-              <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#f5f5f7] text-[#111] transition-[border-radius,opacity] duration-200 group-hover:rounded-full group-hover:opacity-90">
+              <span className="inline-flex h-12 w-12 items-center justify-center rounded-[14px] bg-[#7ff2cd] text-[#06231b] transition-[border-radius,opacity] duration-200 group-hover:rounded-full group-hover:opacity-90">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
                   <path d="M4 12h16" />
                   <path d="M13 5l7 7-7 7" />
                 </svg>
               </span>
-            </Link>
-
-            <a
-              href={safeGlobalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-12 items-center rounded-full border border-fd-border px-6 text-base font-medium text-fd-foreground transition-colors hover:bg-fd-accent"
-            >
-              Add to your Safe
             </a>
           </div>
         </AccessShowcase>

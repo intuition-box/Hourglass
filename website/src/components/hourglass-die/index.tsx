@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import ElectricBorder from '../electric-border/ElectricBorder';
+import { ROLL_EVENT } from '../magic-rings/HeroRings';
 import { ACCESSES, accessByAxis, type Access } from './accesses';
 import type { AxisIndex, HourglassDie } from './scene';
 
@@ -59,6 +61,7 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
         // pointed at an access is already looking at the answer.
         onRollStart: () => {
           rollingRef.current = true;
+          window.dispatchEvent(new Event(ROLL_EVENT)); // the rings burst with it
           if (!aimedRef.current) setChipsIn(false);
         },
       });
@@ -138,86 +141,11 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
   const current = ACCESSES.find((a) => a.id === active) ?? ACCESSES[0];
 
   return (
-    <div
-      className="relative z-10 grid gap-10 lg:grid-cols-[minmax(0,480px)_minmax(0,1fr)] lg:gap-12 lg:flex-1 lg:content-center"
-    >
-      {/* min-w-0: without it the h1's fixed line becomes the column's min-content
-          width and pushes the grid past the viewport on a phone */}
-      <div className="flex min-w-0 flex-col">
-        {children}
+    <div className="relative z-10 flex min-w-0 flex-col">
+      {children}
 
-        <ul className="mt-10 flex flex-col gap-1">
-          {ACCESSES.map((access) => {
-            const isActive = access.id === active;
-            const inner = (
-              <>
-                <span
-                  aria-hidden="true"
-                  className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full transition-opacity"
-                  style={{ background: access.tone, opacity: isActive ? 1 : 0.35 }}
-                />
-                <span className="flex flex-col">
-                  <span
-                    className="text-[17px] font-semibold transition-colors"
-                    style={{ color: isActive ? access.tone : 'var(--color-fd-foreground)' }}
-                  >
-                    {access.name}
-                  </span>
-                  <span className="text-[15px] text-fd-muted-foreground">{access.descriptor}</span>
-                </span>
-              </>
-            );
-            const className = [
-              'flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)]',
-              isActive ? 'bg-fd-accent/40' : 'hover:bg-fd-accent/20',
-            ].join(' ');
-
-            return (
-              <li key={access.id}>
-                {access.href ? (
-                  <Link
-                    href={access.href}
-                    className={className}
-                    onMouseEnter={() => preview(access)}
-                    onMouseLeave={cancelPreview}
-                    onFocus={() => preview(access)}
-                    onClick={() => choose(access)}
-                  >
-                    {inner}
-                  </Link>
-                ) : (
-                  <button
-                    type="button"
-                    className={className}
-                    aria-pressed={isActive}
-                    onMouseEnter={() => preview(access)}
-                    onMouseLeave={cancelPreview}
-                    onFocus={() => preview(access)}
-                    onClick={() => choose(access)}
-                  >
-                    {inner}
-                  </button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-
-        {/* No canvas on a phone, so the advantages read as a plain list instead. */}
-        <ul className="mt-8 flex flex-col gap-2 md:hidden">
-          {current.advantages.map((adv) => (
-            <li key={adv.lead} className="text-[15px]">
-              <b className="font-semibold" style={{ color: current.tone }}>
-                {adv.lead}
-              </b>{' '}
-              <span className="text-fd-muted-foreground">{adv.rest}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="relative hidden min-h-[380px] md:block lg:min-h-[560px]">
+      {/* Centred: the die sits on the axis the rings radiate from. */}
+      <div className="relative mx-auto hidden w-full max-w-[1120px] min-h-[430px] md:block lg:min-h-[540px]">
         {/* the scene mounts its canvas here; the chips inherit its --die-* vars */}
         <div ref={hostRef} className="absolute inset-0">
           {!live && (
@@ -241,10 +169,10 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
               const angle = (-90 + (i * 360) / current.advantages.length) * (Math.PI / 180);
               const cos = Math.cos(angle);
               /* Anchored just outside the cube's footprint rather than on a true
-                 ellipse: the cube is ~48% of the column, so a chip centred on the
-                 ring would sit on its edges and become unreadable. */
+                 ellipse: a chip centred on the ring would sit on its edges and
+                 become unreadable. */
               const side = cos > 0.25 ? 1 : cos < -0.25 ? -1 : 0;
-              const x = 50 + side * 22;
+              const x = 50 + side * 24;
               const y = 50 + Math.sin(angle) * 41;
               return (
                 <li
@@ -288,6 +216,86 @@ export function AccessShowcase({ children }: { children: ReactNode }) {
           </ul>
         </div>
       </div>
+
+      {/* The three accesses, in a row under the die. */}
+      <ul className="mt-6 grid gap-2 md:mt-2 md:grid-cols-3 md:gap-5">
+        {ACCESSES.map((access) => {
+          const isActive = access.id === active;
+          /* No colour dot: the live access wears the border in its own colour, so
+             a second marker of the same thing is noise. */
+          const inner = (
+            <span className="flex flex-col">
+              <span
+                className="text-[17px] font-semibold transition-colors"
+                style={{ color: isActive ? access.tone : 'var(--color-fd-foreground)' }}
+              >
+                {access.name}
+              </span>
+              <span className="text-[15px] text-fd-muted-foreground">{access.descriptor}</span>
+            </span>
+          );
+          const className = [
+            'flex h-full w-full items-start rounded-lg px-3.5 py-3 text-left transition-colors',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent-line)]',
+            isActive ? '' : 'hover:bg-fd-accent/20',
+          ].join(' ');
+
+          const item = (
+            <>
+              {access.href ? (
+                <Link
+                  href={access.href}
+                  className={className}
+                  onMouseEnter={() => preview(access)}
+                  onMouseLeave={cancelPreview}
+                  onFocus={() => preview(access)}
+                  onClick={() => choose(access)}
+                >
+                  {inner}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className={className}
+                  aria-pressed={isActive}
+                  onMouseEnter={() => preview(access)}
+                  onMouseLeave={cancelPreview}
+                  onFocus={() => preview(access)}
+                  onClick={() => choose(access)}
+                >
+                  {inner}
+                </button>
+              )}
+            </>
+          );
+
+          /* The live access wears the border rather than a tinted panel: the
+             die's colour, drawn round the one it belongs to. */
+          return (
+            <li key={access.id}>
+              {isActive ? (
+                <ElectricBorder color={access.tone} chaos={0.1} speed={0.1} borderRadius={10}>
+                  {item}
+                </ElectricBorder>
+              ) : (
+                item
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* No canvas on a phone, so the advantages read as a plain list instead. */}
+      <ul className="mt-8 flex flex-col gap-2 md:hidden">
+        {current.advantages.map((adv) => (
+          <li key={adv.lead} className="text-[15px]">
+            <b className="font-semibold" style={{ color: current.tone }}>
+              {adv.lead}
+            </b>{' '}
+            <span className="text-fd-muted-foreground">{adv.rest}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
