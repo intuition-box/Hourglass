@@ -404,6 +404,9 @@ export class HourglassDie {
   private slow = 0;
 
   private orbit = Math.PI * 0.28;
+  private spinDir = 1;
+  /** Which end of each axis is the emptier one; -1 for +Y, +1 for -Y. */
+  private readonly emptier = [0, 0, 0];
   private pointerX = 0;
   private pointerY = 0;
   private aimX = 0;
@@ -602,6 +605,28 @@ export class HourglassDie {
     return best;
   }
 
+  /**
+   * Turn the shorter way toward the octant where the empty pyramids are.
+   *
+   * The speed never changes and the camera never stops — it just picks the
+   * direction that puts the see-through faces in front of the lens sooner, and
+   * so keeps them there longer.
+   */
+  private chooseSpin(): void {
+    const aim = new THREE.Vector3();
+    for (let i = 0; i < 3; i++) {
+      scratch.copy(AXES[i]).applyQuaternion(this.die.quaternion);
+      aim.addScaledVector(scratch, this.glasses[i].fillPlus < 0.5 ? 1 : -1);
+    }
+    if (aim.x === 0 && aim.z === 0) return; // straight up or down: no azimuth to aim at
+    const target = Math.atan2(aim.x, aim.z);
+    let delta = (target - this.orbit) % (Math.PI * 2);
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    // dead ahead already: keep going rather than reversing for a hair
+    if (Math.abs(delta) > 0.15) this.spinDir = delta > 0 ? 1 : -1;
+  }
+
   private startRoll(axis: AxisIndex): void {
     // Land with the fuller bulb on top, so the hourglass always has something to run.
     const sgn = this.glasses[axis].fillPlus >= 0.5 ? -1 : 1;
@@ -628,6 +653,7 @@ export class HourglassDie {
       this.roll.active = false;
       this.die.quaternion.copy(this.roll.to);
       this.die.position.y = 0;
+      this.chooseSpin();
       this.onSettle?.(this.activeIndex());
     }
   }
@@ -681,7 +707,20 @@ export class HourglassDie {
 
     // Camera orbits the die rather than the die spinning: the face that landed
     // down has to stay down, or the metaphor breaks.
-    if (!this.reducedMotion) this.orbit += dt * 0.12;
+    /* The emptier end of an axis swaps when its glass passes half. That changes
+       which side is worth looking at, so re-evaluate the turn then as well as
+       after a landing. */
+    let swapped = false;
+    for (let i = 0; i < 3; i++) {
+      const end = this.glasses[i].fillPlus < 0.5 ? 1 : -1;
+      if (this.emptier[i] !== end) {
+        this.emptier[i] = end;
+        swapped = true;
+      }
+    }
+    if (swapped) this.chooseSpin();
+
+    if (!this.reducedMotion) this.orbit += dt * 0.12 * this.spinDir;
     this.pointerX += (this.aimX - this.pointerX) * Math.min(1, dt * 3);
     this.pointerY += (this.aimY - this.pointerY) * Math.min(1, dt * 3);
     const radius = 8.6;
