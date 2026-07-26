@@ -22,7 +22,7 @@ export interface Access {
   descriptor: string;
   /** Absent when there is nothing to link to yet — the item is a button instead. */
   href?: string;
-  /** Matches the sand colour of this axis in the scene. */
+  /** This axis's sand, lifted where the deepest value would fail as text. */
   tone: string;
   advantages: Advantage[];
 }
@@ -34,7 +34,7 @@ export const ACCESSES: Access[] = [
     name: 'Pay contributors',
     descriptor: 'payroll by the second, subscriptions by the period',
     href: '/docs',
-    tone: '#1fff9f',
+    tone: '#c4ffe9',
     advantages: [
       {
         lead: 'Sign once',
@@ -59,7 +59,7 @@ export const ACCESSES: Access[] = [
     name: 'Agentic DeFi',
     descriptor: 'an agent trades inside bounds it cannot exceed',
     href: '/docs/agent-investment',
-    tone: '#00c8ff',
+    tone: '#3fd0a2',
     advantages: [
       { lead: 'Scoped permissions', rest: 'the mandate bounds every swap, on-chain' },
       {
@@ -81,7 +81,7 @@ export const ACCESSES: Access[] = [
     axis: 2,
     name: '1inch Aqua',
     descriptor: 'your treasury becomes a liquidity pool without leaving the Safe',
-    tone: '#a855ff',
+    tone: '#2f9e78',
     advantages: [
       {
         lead: 'Your treasury is the pool',

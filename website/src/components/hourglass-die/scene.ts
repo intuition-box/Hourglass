@@ -45,11 +45,17 @@ const AXES = [
 /** Order the die visits its faces, matching the order the accesses are listed. */
 const CYCLE: AxisIndex[] = [1, 0, 2];
 
-/** One colour per axis: X blue, Y green, Z violet. */
+/**
+ * One value per axis, from the mark's palette: Y light, X mid, Z deep.
+ *
+ * Not the mark's literal three hexes. Lighting compresses value differences —
+ * at the mark's spacing the three faces shade into one green — so the ends are
+ * pushed apart until the axes stay legible under shading.
+ */
 const SAND = [
-  { tone: 0x00c8ff, glow: 0x004659 },
-  { tone: 0x1fff9f, glow: 0x0b5937 },
-  { tone: 0xa855ff, glow: 0x3b1e59 },
+  { tone: 0x3fd0a2, glow: 0x0d4d3a },
+  { tone: 0xc4ffe9, glow: 0x1a7a5c },
+  { tone: 0x0e6349, glow: 0x062a20 },
 ] as const;
 
 const RAD = 40;
@@ -448,7 +454,6 @@ export class HourglassDie {
     this.scene.add(rim);
 
     this.scene.add(this.die);
-    this.buildFrame();
     this.grain = this.buildGrainTexture();
     this.glasses = [new Hourglass(0, this.grain), new Hourglass(1, this.grain), new Hourglass(2, this.grain)];
     for (const h of this.glasses) this.die.add(h.group);
@@ -560,49 +565,6 @@ export class HourglassDie {
     box.dispose();
     for (const m of materials) m.dispose();
     return rt.texture;
-  }
-
-  /**
-   * The wireframe of the decomposition: the cube's twelve edges, and the eight
-   * spokes from the centre to its corners — every one of those is an edge four
-   * pyramids share. Drawn because the glass alone doesn't say "cube".
-   */
-  private buildFrame(): void {
-    const h = S * PIECE;
-    const corners: number[][] = [];
-    for (const x of [-h, h]) for (const y of [-h, h]) for (const z of [-h, h]) corners.push([x, y, z]);
-
-    const edges: number[] = [];
-    for (let i = 0; i < 8; i++) {
-      for (let j = i + 1; j < 8; j++) {
-        let differs = 0;
-        for (let k = 0; k < 3; k++) if (corners[i][k] !== corners[j][k]) differs++;
-        if (differs === 1) edges.push(...corners[i], ...corners[j]);
-      }
-    }
-    const spokes: number[] = [];
-    for (const c of corners) spokes.push(0, 0, 0, ...c);
-
-    const line = (points: number[], opacity: number, throughSolids: boolean) => {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(points), 3));
-      const mat = new THREE.LineBasicMaterial({
-        color: 0x8ff3d6,
-        transparent: true,
-        opacity,
-        depthWrite: false,
-        depthTest: !throughSolids,
-      });
-      const seg = new THREE.LineSegments(geo, mat);
-      seg.renderOrder = 41;
-      this.die.add(seg);
-      this.disposables.push(geo, mat);
-    };
-    line(edges, 0.5, false);
-    /* Drawn through whatever is in front of them: a pyramid full of sand shows
-       the camera its base, which is a whole cube face, so the only way the
-       assembly stays legible is to let its shared edges read as an X-ray. */
-    line(spokes, 0.3, true);
   }
 
   private buildGrainTexture(): THREE.Texture {
