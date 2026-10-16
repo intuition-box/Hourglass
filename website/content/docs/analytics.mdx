@@ -32,17 +32,8 @@ The two payment shapes are attributable through one self-deployed instance each:
 - the `ERC20PeriodTransferEnforcer` for [subscriptions](/docs/concepts/subscriptions);
 - the `ERC20StreamingEnforcer` for [streams](/docs/concepts/streams).
 
-Ten instances in total are now routed through, since the
-[Agent DeFi](/docs/agent-defi) mandates carry their own caveats — balance-change,
-exact-execution, redeemer, limited-calls and the `functionCall` scope enforcers.
-Routing *every* caveat a mandate uses through a HourGlass instance is deliberate:
-it makes the whole mandate attributable rather than one caveat of it, and the
-discovery side matches on those same addresses, so a mandate signed against the
-canonical enforcer would never be rediscovered.
-
-The dashboard shipped today still derives its metrics from the two payment
-enforcers; the agent rails are attributable by the same mechanism but are not yet
-broken out in the UI. The rest of the enforcer suite is deployed under the same
+The optional end date of a subscription routes through a third instance, the
+`TimestampEnforcer`, which emits no events. The rest of the enforcer suite is deployed under the same
 salt and emits nothing, since no delegation references it. Adding a shape later
 means indexing one more emitter address, not a new deployment — the addresses are
 in [Deployments](/docs/deployments).
