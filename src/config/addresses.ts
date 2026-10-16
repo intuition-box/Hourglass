@@ -1,4 +1,5 @@
 import { type Address } from 'viem'
+import { NETWORKS, anvilLocal, findNetwork } from './networks'
 
 export interface ChainAddresses {
   delegationManager: Address
@@ -18,18 +19,18 @@ export interface ChainAddresses {
   allowedCalldataEnforcer: Address
   redeemerEnforcer: Address
   delegationMetaSwapAdapter: Address
-  // HourGlass-owned instances of the audited enforcers (unmodified bytecode, deployed
-  // under the HourGlass CREATE2 salt). Present only on chains where they are deployed.
-  // The period enforcer doubles as the on-chain analytics marker — its
-  // TransferredInPeriod events are attributable to HourGlass by emitter address
-  // (see spec/plan-analytics.md and spec/hourglass-enforcer-suite.md).
-  hourglass?: HourGlassEnforcers
+  // HourGlass-owned instances of the enforcers the payment rails sign against
+  // (unmodified bytecode, deployed under the HourGlass CREATE2 salt). Present only on
+  // networks where they are deployed. The period enforcer doubles as the on-chain
+  // analytics marker — its TransferredInPeriod events are attributable to HourGlass by
+  // emitter address (see spec/plan-analytics.md and spec/hourglass-enforcer-suite.md).
+  hourglass?: HourGlassPaymentEnforcers
 }
 
 /**
  * The complete Delegation Framework caveat enforcer set, deployed under the HourGlass
- * CREATE2 salt. Registry only: `getEnvironment()` decides which of these actually
- * override the SDK defaults, so adding an entry here does not change signing behaviour.
+ * CREATE2 salt on Ethereum and Base. Registry only: `getEnvironment()` decides which
+ * instances actually override the SDK defaults.
  */
 export interface HourGlassEnforcers {
   allowedCalldataEnforcer: Address
@@ -75,7 +76,7 @@ export interface HourGlassEnforcers {
 // Same across all chains (deterministic deployment)
 const DELEGATION_MANAGER: Address = '0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3'
 
-// Enforcer addresses (same on Base Sepolia and Base Mainnet)
+// MetaMask's canonical enforcers (Delegation Framework v1.3.0, deterministic: same on every network)
 const SHARED_ENFORCERS = {
   nativeTokenPeriodTransferEnforcer: '0x9BC0FAf4Aca5AE429F4c06aEEaC517520CB16BD9' as Address,
   erc20PeriodTransferEnforcer: '0x474e3Ae7E169e940607cC624Da8A15Eb120139aB' as Address,
@@ -94,13 +95,11 @@ const SHARED_ENFORCERS = {
   delegationMetaSwapAdapter: '0x5e4b49156D23D890e7DC264c378a443C2d22A80E' as Address,
 }
 
-// HourGlass-owned instances of the audited enforcers. Deployed from the OWS
-// `ourglass-deployer` wallet (0x2FF0363132d0dc5feb090790C46B77EF1ce96aa2) via CREATE2
-// under the salt bytes32("OURGLASS"). Salt + creation bytecode fully determine the
-// address, so these are byte-for-byte the same on every chain we deploy to — hence one
-// shared constant rather than a per-chain copy. Attach it only to chains where the
-// deployment actually happened. See spec/hourglass-enforcer-suite.md.
-const HOURGLASS_ENFORCERS: HourGlassEnforcers = {
+// HourGlass-owned instances of the audited enforcers, deployed via CREATE2 under the
+// salt bytes32("OURGLASS"). Salt + creation bytecode fully determine the address, so
+// these are byte-for-byte the same on every network they are deployed to — hence one
+// shared constant rather than a per-chain copy. See spec/hourglass-enforcer-suite.md.
+export const HOURGLASS_SUITE: HourGlassEnforcers = {
   allowedCalldataEnforcer: '0xb418A0C7003F15EEC765D1e1c0E198cA8531fABe' as Address,
   allowedMethodsEnforcer: '0x5FFb84883543A9ED068b1D3DB428037e95C1f26A' as Address,
   allowedTargetsEnforcer: '0x71832d69693A818C7e6163e632c5e3fBedf65362' as Address,
@@ -140,55 +139,53 @@ const HOURGLASS_ENFORCERS: HourGlassEnforcers = {
   valueLteEnforcer: '0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076' as Address,
 }
 
-export const addresses: Record<number, ChainAddresses> = {
-  // Base Sepolia (84532)
-  84532: {
-    delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0xE64ea779033131583cDE1c8862685051E09C4b78' as Address, // deployed on Base Sepolia
-    ...SHARED_ENFORCERS,
-  },
-  // Ethereum Sepolia (11155111) — DelegationManager + enforcers are the official
-  // deterministic MetaMask deployments; the DeleGatorModuleFactory is NOT
-  // deterministic and was deployed separately for this chain (see scripts/deploy-factory.mjs).
-  11155111: {
-    delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0x250435c7D339F03050c847c85f0108f44e876058' as Address,
-    ...SHARED_ENFORCERS,
-  },
-  // Base Mainnet (8453) — the full HourGlass enforcer suite was deployed here on
-  // 2026-07-25, same wallet and salt as chain 1, so the addresses are identical.
-  // All 37 verified on Basescan. See spec/hourglass-enforcer-suite.md.
-  8453: {
-    delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0x0D0421e43057bf850e243EcDA2AD8966C8D5877B' as Address,
-    ...SHARED_ENFORCERS,
-    hourglass: HOURGLASS_ENFORCERS,
-  },
-  // Ethereum Mainnet (1) — DelegationManager + shared enforcers are the deterministic
-  // MetaMask deployments. The DeleGatorModuleFactory and the first three HourGlass
-  // enforcer instances were deployed on 2026-06-25 from the OWS `ourglass-deployer`
-  // wallet (0x2FF0363132d0dc5feb090790C46B77EF1ce96aa2); the remaining 34 enforcers
-  // followed on 2026-07-25 from the same wallet and salt, all verified on Etherscan.
-  // See spec/hourglass-enforcer-suite.md.
-  1: {
-    delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0xbDDE43bCf6Db9DBeB1127E6574CCF70BFb1c2DC3' as Address,
-    ...SHARED_ENFORCERS,
-    hourglass: HOURGLASS_ENFORCERS,
-  },
-  // Localhost / Anvil (forked Base Sepolia, uses same chain ID)
-  // When running locally, the factory address comes from test/deployment.json
-  31337: {
-    delegationManager: DELEGATION_MANAGER,
-    delegatorModuleFactory: '0x0000000000000000000000000000000000000000' as Address, // Set from deployment.json
-    ...SHARED_ENFORCERS,
-  },
+/** The four enforcers the payment rails sign against — the subset deployed on every live non-canonical network. */
+type HourGlassPaymentEnforcers = Pick<
+  HourGlassEnforcers,
+  'erc20PeriodTransferEnforcer' | 'timestampEnforcer' | 'erc20StreamingEnforcer' | 'valueLteEnforcer'
+>
+
+const HOURGLASS_PAYMENT: HourGlassPaymentEnforcers = {
+  erc20PeriodTransferEnforcer: HOURGLASS_SUITE.erc20PeriodTransferEnforcer,
+  timestampEnforcer: HOURGLASS_SUITE.timestampEnforcer,
+  erc20StreamingEnforcer: HOURGLASS_SUITE.erc20StreamingEnforcer,
+  valueLteEnforcer: HOURGLASS_SUITE.valueLteEnforcer,
 }
+
+function buildAddresses(): Record<number, ChainAddresses> {
+  const out: Record<number, ChainAddresses> = {
+    // Anvil: the factory address comes from test/deployment.json at run time.
+    [anvilLocal.id]: {
+      delegationManager: DELEGATION_MANAGER,
+      delegatorModuleFactory: '0x0000000000000000000000000000000000000000' as Address,
+      ...SHARED_ENFORCERS,
+    },
+  }
+  for (const n of NETWORKS) {
+    if (n.deployment.status !== 'live') continue
+    out[n.chain.id] = {
+      delegationManager: DELEGATION_MANAGER,
+      delegatorModuleFactory: n.deployment.moduleFactory,
+      ...SHARED_ENFORCERS,
+      ...(n.deployment.enforcers === 'canonical' ? {} : { hourglass: HOURGLASS_PAYMENT }),
+    }
+  }
+  return out
+}
+
+/** Contract addresses per live network, derived from `networks.ts`. Pending networks are absent. */
+export const addresses: Record<number, ChainAddresses> = buildAddresses()
 
 export function getAddresses(chainId: number): ChainAddresses {
   const addrs = addresses[chainId]
-  if (!addrs) {
-    throw new Error(`Unsupported chain: ${chainId}`)
-  }
+  if (!addrs) throw new Error(unavailableReason(chainId))
   return addrs
+}
+
+/** Why HourGlass cannot run on a chain: not deployed there yet, or not supported at all. */
+export function unavailableReason(chainId: number): string {
+  const network = findNetwork(chainId)
+  return network
+    ? `HourGlass is not deployed on ${network.name} yet.`
+    : `Unsupported chain: ${chainId}`
 }

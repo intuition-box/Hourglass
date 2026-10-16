@@ -1,4 +1,5 @@
 import type { Address, Hex } from 'viem'
+import { findNetwork } from '../config/networks'
 
 /**
  * Read-only client for the Safe Transaction Service "messages" API. A delegation
@@ -9,15 +10,8 @@ import type { Address, Hex } from 'viem'
  * proposed it. No auth, GET only.
  */
 
-/** Chain id → Safe Transaction Service base URL. The web app runs on Base Sepolia. */
-const TX_SERVICE_URL: Record<number, string> = {
-  84532: 'https://safe-transaction-base-sepolia.safe.global',
-  11155111: 'https://safe-transaction-sepolia.safe.global',
-  8453: 'https://safe-transaction-base.safe.global',
-}
-
 export function txServiceUrl(chainId: number): string | null {
-  return TX_SERVICE_URL[chainId] ?? null
+  return findNetwork(chainId)?.txService ?? null
 }
 
 /** A confirmation is one owner's signature over the message. */
