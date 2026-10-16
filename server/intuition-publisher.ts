@@ -202,8 +202,8 @@ async function handlePublish(rt: Runtime, body: PublishBody): Promise<{ uri: str
   if (!ok) throw new Error('EIP-1271 verification failed')
 
   // 3. Resolve + sanitize token metadata, build display details from the caveat.
-  // A yield step pins an exact execution and names no token, so an absent token is not
-  // by itself a reason to refuse: only failing to describe the delegation at all is.
+  // A delegation with no token caveat is not by itself a reason to refuse: only
+  // failing to describe the delegation at all is.
   const token = tokenFromDelegation(delegation, body.chainId)
   const meta = token
     ? sanitizeTokenMeta({ address: token, ...(await readErc20Meta(app, token)) })

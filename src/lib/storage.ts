@@ -16,7 +16,7 @@ export interface StoredDelegation {
   }
   meta: {
     label: string
-    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'erc20Streaming' | 'transferIntent' | 'swapIntent' | 'strategyMandate' | 'custom'
+    scopeType: 'ethSpendingLimit' | 'erc20SpendingLimit' | 'erc20Streaming' | 'transferIntent' | 'swapIntent' | 'custom'
     createdAt: string
     chainId: number
     safeAddress: Address
@@ -52,25 +52,6 @@ export interface StoredDelegation {
     // Display-only: the human rate the beneficiary signed up for (e.g. "1000" / "monthly").
     ratePerPeriod?: string
     ratePeriod?: string
-    // Strategy-mandate meta (scopeType === 'strategyMandate'). The rail is
-    // functionCall + erc20BalanceChange: an agent swaps on the Safe's behalf,
-    // bounded by a per-swap loss cap. `strategyKind` names the variant (dca,
-    // range, …) so the catalogue can grow without new scopeTypes.
-    strategyKind?: 'dca' | 'range' | 'limitOrder'
-    // The token the agent buys with the funding token (the swap output). The DCA
-    // intent (amount/period) lives in `amount`/`period` above — an agent
-    // instruction, NOT an on-chain guarantee. Only `capPerSwap` is enforced.
-    targetToken?: Address
-    // Human per-swap spend cap (formatted with the token's decimals), e.g. "55".
-    capPerSwap?: string
-    // true = the cap bounds a DECREASE (spend) of the token; the enforced direction.
-    enforceDecrease?: boolean
-    // Limit-order pairing (strategyKind === 'limitOrder'). A limit order is TWO
-    // delegations: the swap carries the strategy (spend cap + price trigger +
-    // limitedCalls), the approve grants the router its allowance. Each references
-    // the other's delegationHash so discovery (and the agent) can reunite the pair.
-    pairedApproveHash?: Hex
-    pairedSwapHash?: Hex
     // Custom delegation meta
     targetAddress?: Address
     methodSelector?: Hex

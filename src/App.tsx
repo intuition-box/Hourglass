@@ -3,25 +3,17 @@ import Home from './pages/Home'
 import CreateDelegation from './pages/CreateDelegation'
 import CreateStream from './pages/CreateStream'
 import Charge from './pages/Charge'
-import AgentDefi from './pages/AgentDefi'
-import Strategy from './pages/Strategy'
-import Aqua from './pages/Aqua'
 import { useFinalizePending } from './hooks/useFinalizePending'
 import { Logo, Card } from './ui/components'
-import { IconGrid, IconPlus, IconBolt, IconRepeat, IconLock, IconArrowR, IconTrend, IconCube } from './ui/icons'
+import { IconGrid, IconPlus, IconBolt, IconRepeat, IconLock, IconArrowR } from './ui/icons'
 
-type Page = 'home' | 'create' | 'redeem' | 'agent-defi' | 'yield' | 'strategy' | 'limit' | 'aqua'
+type Page = 'home' | 'create' | 'redeem'
 type CreateMode = 'choose' | 'subscription' | 'stream'
 
 const NAV: { key: Page; label: string; icon: ComponentType<{ size?: number }> }[] = [
   { key: 'home', label: 'Overview', icon: IconGrid },
   { key: 'create', label: 'Create', icon: IconPlus },
   { key: 'redeem', label: 'Charge', icon: IconBolt },
-  { key: 'agent-defi', label: 'Agent DeFi', icon: IconTrend },
-  // Strategy (DCA) tab hidden from nav for the demo — the rail isn't functional yet
-  // (needs the Permit2 setup the limit order got). Code kept; re-add when it works.
-  // { key: 'strategy', label: 'Strategy', icon: IconRepeat },
-  { key: 'aqua', label: 'Aqua', icon: IconCube },
 ]
 
 function ChoiceCard({
@@ -94,11 +86,9 @@ function AppInner() {
   const [page, setPage] = useState<Page>('home')
   const [createMode, setCreateMode] = useState<CreateMode>('choose')
 
-  // Finalize-on-open (ADR 0005): poke the publisher for any finalized mandate the
-  // Safe signed, from ANY tab — not only Overview. A strategy / limit-order
-  // operator signs on that tab and stays there; mounting this at the app root means
-  // the poke fires as soon as the message reaches its signing threshold, without
-  // having to navigate back to Home.
+  // Finalize-on-open (ADR 0005): poke the publisher for any finalized delegation the
+  // Safe signed, from any tab, so the poke fires as soon as the message reaches its
+  // signing threshold without having to navigate back to Home.
   useFinalizePending()
 
   function navigate(key: Page) {
@@ -149,12 +139,6 @@ function AppInner() {
           {page === 'create' && createMode === 'subscription' && <CreateDelegation />}
           {page === 'create' && createMode === 'stream' && <CreateStream />}
           {page === 'redeem' && <Charge />}
-          {page === 'agent-defi' && <AgentDefi />}
-          {/* Deep links from Overview open a strategy directly, skipping the picker. */}
-          {page === 'yield' && <AgentDefi initial="liquidity" />}
-          {page === 'strategy' && <Strategy />}
-          {page === 'limit' && <AgentDefi initial="dip" />}
-          {page === 'aqua' && <Aqua />}
         </main>
       </div>
     </div>

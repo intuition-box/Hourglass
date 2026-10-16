@@ -105,8 +105,9 @@ describe('snap (perSecondToRate ∘ rateToPerSecond) — WYSIWYG, idempotent, no
 })
 
 describe('streamedAvailable — claimable / enforced amount', () => {
-  test('returns the upfront amount before and at start', () => {
-    expect(available(1000n, usdc('5'), MAX_UINT256, 100, 50)).toBe(usdc('5'))
+  test('unlocks nothing before start, then the upfront amount at start', () => {
+    // ERC20StreamingEnforcer returns 0 while block.timestamp < startTime.
+    expect(available(1000n, usdc('5'), MAX_UINT256, 100, 50)).toBe(0n)
     expect(available(1000n, usdc('5'), MAX_UINT256, 100, 100)).toBe(usdc('5'))
   })
 

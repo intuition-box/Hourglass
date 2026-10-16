@@ -1,6 +1,6 @@
 # 0006 — Strategy rail routes through the HourGlass ERC20BalanceChange enforcer
 
-**Status:** Accepted
+**Status:** Superseded by 0009
 **Date:** 2026-07-25
 **Triggered by:** user request (DCA / strategy mandate implementation)
 

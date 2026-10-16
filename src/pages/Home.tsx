@@ -5,20 +5,14 @@ import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
 import { getAddresses } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
-import { useUniswapPools } from '../hooks/useUniswapPools'
-import { useSafeYieldPlans, type YieldPlanStep } from '../hooks/useSafeYieldPlans'
-import { PlanFolder } from '../ui/PlanFolder'
-import { buildRevokeTxs } from '../lib/revoke'
-import { getLimitOrderExecution } from '../lib/limitOrderStatus'
 import { portalAtomUrl } from '../lib/intuition'
 import { SubscriptionDetail } from './SubscriptionDetail'
 import { Card, Btn, StatusBadge, Payee, STATUS, type Status } from '../ui/components'
 import { IconChip, IconCheck, IconPlus, IconRepeat, IconLock, IconCube, IconExt, IconAlert, IconArrowR } from '../ui/icons'
 import { findChain, rpcUrl } from '../config/supported-chains'
 
-// Kept in step with App.tsx's Page union — this had drifted behind the routes added
-// since, so Overview could not link to them.
-type Page = 'home' | 'create' | 'redeem' | 'yield' | 'strategy' | 'limit' | 'aqua'
+// Kept in step with App.tsx's Page union.
+type Page = 'home' | 'create' | 'redeem'
 
 function tintFor(addr: string): { tint: string; logo: string } {
   const palette = ['#3B82F6', '#22D3EE', '#8B5CF6', '#34D399', '#FB7185', '#FBBF24']
@@ -26,18 +20,17 @@ function tintFor(addr: string): { tint: string; logo: string } {
   for (let i = 2; i < addr.length; i++) h = (h * 31 + addr.charCodeAt(i)) >>> 0
   return { tint: palette[h % palette.length], logo: addr.slice(2, 4).toUpperCase() }
 }
-function statusOf(s: StoredDelegation['meta']['status'], executed = false): Status {
-  if (executed) return 'executed'
+function statusOf(s: StoredDelegation['meta']['status']): Status {
   return s === 'signed' ? 'active' : s === 'revoked' ? 'revoked' : 'pending'
 }
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`
 
-function SubCard({ d, onOpen, executedTx }: { d: StoredDelegation; onOpen: () => void; executedTx?: string }) {
-  const status = statusOf(d.meta.status, executedTx !== undefined)
+function SubCard({ d, onOpen }: { d: StoredDelegation; onOpen: () => void }) {
+  const status = statusOf(d.meta.status)
   const stream = d.meta.scopeType === 'erc20Streaming'
   const payeeAddr = d.meta.recipient ?? d.delegation.delegate
   const { tint, logo } = tintFor(payeeAddr)
-  const dim = status === 'revoked' || status === 'executed'
+  const dim = status === 'revoked'
   return (
     <Card hover onClick={onOpen} className={`p-5 cursor-pointer relative ${dim ? 'opacity-70' : ''}`}>
       <span className="absolute left-0 top-5 bottom-5 w-[3px] rounded-full" style={{ background: STATUS[status].dot }} />
@@ -45,14 +38,7 @@ function SubCard({ d, onOpen, executedTx }: { d: StoredDelegation; onOpen: () =>
         <Payee logo={logo} tint={tint} name={d.meta.label} addr={short(payeeAddr)} />
         <div className="flex items-center gap-2 shrink-0">
           {stream && <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#22D3EE' }}><IconRepeat size={11} /> stream</span>}
-          {status === 'executed' && executedTx ? (
-            <a href={executedTx} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1" title="View execution tx">
-              <StatusBadge status={status} size="sm" />
-              <IconExt size={12} className="text-faint" />
-            </a>
-          ) : (
-            <StatusBadge status={status} size="sm" />
-          )}
+          <StatusBadge status={status} size="sm" />
         </div>
       </div>
       <div className="mt-5 flex items-end gap-2">
@@ -106,56 +92,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const [error, setError] = useState<string | null>(null)
   const [safeInfo, setSafeInfo] = useState<{ owners: string[]; threshold: number } | null>(null)
   const [subs, setSubs] = useState<StoredDelegation[]>(() => getDelegations())
-  // Positions are NFTs and carry no mandate; the plans do, so strategy cards open the
-  // same detail + revoke every other delegation on this Safe uses. Reuses the module
-  // address this page already resolves for its status banner.
-  const yieldPlans = useSafeYieldPlans(moduleAddress ?? undefined, safe.chainId)
-  const [revokingHash, setRevokingHash] = useState<string | null>(null)
-  const uniswapPools = useUniswapPools(safe.chainId)
-
-  /** The pool a plan deposits into, matched on the pair and fee its mint pinned. */
-  function apyFor(plan: { deposit: { token0: { address: string }; token1: { address: string }; fee: number } | null }): number | null {
-    const d = plan.deposit
-    if (!d) return null
-    const pool = uniswapPools.pools.find(
-      (p) =>
-        p.fee === d.fee &&
-        p.token0.address.toLowerCase() === d.token0.address.toLowerCase() &&
-        p.token1.address.toLowerCase() === d.token1.address.toLowerCase(),
-    )
-    return pool?.apy ?? null
-  }
-
-  async function revokeStep(step: YieldPlanStep) {
-    const hash = step.delegation.meta.delegationHash
-    setRevokingHash(hash)
-    try {
-      await sdk.txs.send({ txs: buildRevokeTxs(step.delegation, safe.chainId) })
-      yieldPlans.refresh()
-    } catch {
-      // The Safe surfaces its own rejection; nothing useful to add here.
-    } finally {
-      setRevokingHash(null)
-    }
-  }
   const [selected, setSelected] = useState<StoredDelegation | null>(null)
-  // Limit orders are one-shot; once fired on-chain, show them as Executed not Active,
-  // with a link to the redemption tx. Keyed by delegationHash → explorer URL ('' = no link).
-  const [executed, setExecuted] = useState<Map<string, string>>(new Map())
-
-  useEffect(() => {
-    const orders = subs.filter((d) => d.meta.strategyKind === 'limitOrder' && d.meta.status === 'signed')
-    if (orders.length === 0) return
-    let cancelled = false
-    Promise.all(orders.map(async (d) => {
-      const ex = await getLimitOrderExecution(d.meta.chainId, d.meta.delegationHash, d.meta.createdAt)
-      return ex.executed ? ([d.meta.delegationHash.toLowerCase(), ex.txUrl ?? ''] as const) : null
-    }))
-      .then((hits) => { if (!cancelled) setExecuted(new Map(hits.filter((h): h is readonly [string, string] => h !== null))) })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [subs])
-
   function refresh() {
     const next = getDelegations()
     setSubs(next)
@@ -224,8 +161,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
   const active = subs.filter((s) => s.meta.status === 'signed')
   // Total engaged: the plain sum of each active mandate's headline amount — the same
   // figure shown on its card (a stream shows its per-period rate, everything else its
-  // amount). No per-period normalisation, so a limit order (period 'swap') or any
-  // non-recurring mandate is counted too.
+  // amount). No per-period normalisation.
   const committed = active.reduce((sum, s) => {
     const shown = s.meta.scopeType === 'erc20Streaming' ? s.meta.ratePerPeriod : s.meta.amount
     const amount = parseFloat((shown ?? '0').replace(/,/g, ''))
@@ -278,44 +214,11 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
         </div>
       )}
 
-      {/* Recovered from the graph and the chain, so they survive a reload. The plan card
-          already carries the pair, the amounts and the yield — a separate positions strip
-          only said the same thing twice. */}
-      {yieldPlans.plans.length > 0 && (
-        <div className="mb-6">
-          <div className="flex items-end justify-between gap-4 mb-6">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight text-ink">Agentic DeFi strategies</h1>
-              <p className="text-dim text-sm mt-1">Positions an agent opened and manages under a capped mandate.</p>
-            </div>
-            <Btn kind="ghost" onClick={() => onNavigate('yield')}>Manage</Btn>
-          </div>
-          {yieldPlans.plans.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              {yieldPlans.plans.map((pl) => (
-                <PlanFolder
-                  key={pl.agentAddress}
-                  plan={pl}
-                  apy={apyFor(pl)}
-                  onOpenStep={(st) => setSelected(st.delegation)}
-                  onRevokeStep={(st) => void revokeStep(st)}
-                  revokingHash={revokingHash}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Separated because they answer different questions: strategies are what an
-          agent runs on the treasury, operations are what the treasury pays out. */}
-      <div className="border-t border-line mb-6" />
-
       {/* Header */}
       <div className="flex items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-ink">Operations</h1>
-          <p className="text-dim text-sm mt-1">Subscriptions, streams and orders — each capped on-chain.</p>
+          <p className="text-dim text-sm mt-1">Subscriptions and streams — each capped on-chain.</p>
         </div>
         <Btn kind="primary" icon={<IconPlus size={18} />} onClick={() => onNavigate('create')}>New subscription</Btn>
       </div>
@@ -340,7 +243,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {subs.map((d) => (
-            <SubCard key={d.meta.delegationHash} d={d} onOpen={() => setSelected(d)} executedTx={executed.get(d.meta.delegationHash.toLowerCase())} />
+            <SubCard key={d.meta.delegationHash} d={d} onOpen={() => setSelected(d)} />
           ))}
         </div>
       )}

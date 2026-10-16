@@ -47,4 +47,3 @@ export const IconDoc = (p: P) => <Ic d={['M7 3h7l5 5v13H7z', 'M14 3v5h5', 'M10 1
 export const IconHash = (p: P) => <Ic d={['M5 9h14M5 15h14M10 4 8 20M16 4l-2 16']} {...p} />
 export const IconGas = (p: P) => <Ic d={['M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16', 'M3 21h14', 'M6 9h8', 'M15 8l3 3v6a2 2 0 0 0 2-2v-6l-3-3']} {...p} />
 export const IconUser = (p: P) => <Ic d={['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z', 'M4 21a8 8 0 0 1 16 0']} {...p} />
-export const IconTrend = (p: P) => <Ic d={['M3 17l6-6 4 4 8-8', 'M15 7h6v6']} {...p} />
