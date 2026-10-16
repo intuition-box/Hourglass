@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSafeAppsSDK } from '@safe-global/safe-apps-react-sdk'
 import { createPublicClient, http, type Address } from 'viem'
 import { DeleGatorModuleFactoryABI, SafeABI } from '../config/abis'
-import { getAddresses } from '../config/addresses'
+import { getAddresses, unavailableReason } from '../config/addresses'
 import { buildModuleInstallTxs, DEFAULT_SALT } from '../lib/module'
 import { getDelegations, type StoredDelegation } from '../lib/storage'
 import { portalAtomUrl } from '../lib/intuition'
@@ -109,7 +109,7 @@ export default function Home({ onNavigate }: { onNavigate: (page: Page) => void 
       setModuleStatus('loading')
       const chain = findChain(safe.chainId)
       if (!chain) {
-        setError(`Unsupported chain: ${safe.chainId}`)
+        setError(unavailableReason(safe.chainId))
         setModuleStatus('error')
         return
       }

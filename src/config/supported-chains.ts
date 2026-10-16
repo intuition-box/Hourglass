@@ -1,84 +1,46 @@
-import { type Address, type Chain } from 'viem'
-import { mainnet, base, baseSepolia, sepolia, foundry } from 'viem/chains'
+import { type Chain } from 'viem'
+import { LIVE_NETWORKS, anvilLocal, findNetwork } from './networks'
 
 /**
- * Single source of truth for the chains the app supports. Add a chain HERE (its
- * viem Chain, USDC address, display meta) and every consumer — wagmi config, the
- * per-page clients, the redeem/verify selectors, the chain-name and explorer
- * helpers — picks it up. No more duplicated `{ 84532: baseSepolia, … }` maps.
- *
- * Per-chain contract addresses (DelegationManager, enforcers, module factory)
- * still live in `addresses.ts`, which this complements.
+ * Chain helpers derived from `networks.ts`. Add or flip a network there; every
+ * consumer — wagmi config, the per-page clients, the redeem/verify selectors, the
+ * chain-name and explorer helpers — picks it up.
  */
-
-// Anvil local chain (Base Sepolia fork) for end-to-end tests.
-export const anvilLocal: Chain = {
-  ...foundry,
-  id: 31337,
-  name: 'Anvil (Local)',
-  rpcUrls: { default: { http: ['http://127.0.0.1:8545'] } },
-}
-
-// Reliable, CORS-enabled RPC endpoints per chain. viem's built-in defaults
-// (e.g. eth.merkle.io for mainnet) are Cloudflare rate-limited and fail with
-// "Failed to fetch" from inside the Safe App iframe — pin explicit endpoints.
-const RPC_URLS: Record<number, string> = {
-  [mainnet.id]: 'https://ethereum-rpc.publicnode.com',
-  [base.id]: 'https://base-rpc.publicnode.com',
-  [baseSepolia.id]: 'https://base-sepolia-rpc.publicnode.com',
-  [sepolia.id]: 'https://ethereum-sepolia-rpc.publicnode.com',
-}
 
 /** The pinned RPC URL for a chain, or undefined to use viem's default. */
 export function rpcUrl(chainId: number): string | undefined {
-  return RPC_URLS[chainId]
+  if (chainId === anvilLocal.id) return anvilLocal.rpcUrls.default.http[0]
+  return findNetwork(chainId)?.rpcUrl
 }
 
-function withRpc(chain: Chain): Chain {
-  const url = RPC_URLS[chain.id]
-  if (!url) return chain
+function withRpc(chain: Chain, url: string): Chain {
   return { ...chain, rpcUrls: { ...chain.rpcUrls, default: { http: [url] } } }
 }
 
-export const SUPPORTED_CHAINS: readonly Chain[] = [mainnet, base, baseSepolia, sepolia, anvilLocal].map(withRpc)
+/** Chains a Safe can use HourGlass on today (live networks + the local anvil fork). */
+export const SUPPORTED_CHAINS: readonly Chain[] = [
+  ...LIVE_NETWORKS.map((n) => withRpc(n.chain, n.rpcUrl)),
+  anvilLocal,
+]
 
 /** The viem Chain for an id, or undefined if unsupported (callers null-check). */
 export function findChain(chainId: number): Chain | undefined {
   return SUPPORTED_CHAINS.find((c) => c.id === chainId)
 }
 
-/** USDC (6 decimals) per chain. */
-export const USDC_ADDRESS: Record<number, Address> = {
-  [mainnet.id]: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-  [base.id]: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-  [baseSepolia.id]: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-  [sepolia.id]: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-}
-
-interface ChainMeta {
-  name: string
-  explorer: string
-  /** Shown in chain selectors (redeem console, verify). Anvil is dev-only and excluded. */
-  selectable: boolean
-}
-
-const CHAIN_META: Record<number, ChainMeta> = {
-  [mainnet.id]: { name: 'Ethereum', explorer: 'https://etherscan.io', selectable: true },
-  [base.id]: { name: 'Base', explorer: 'https://basescan.org', selectable: true },
-  [baseSepolia.id]: { name: 'Base Sepolia', explorer: 'https://sepolia.basescan.org', selectable: true },
-  [sepolia.id]: { name: 'Ethereum Sepolia', explorer: 'https://sepolia.etherscan.io', selectable: true },
-}
-
+/** Display name for any known network, live or pending. */
 export function chainName(chainId: number): string {
-  return CHAIN_META[chainId]?.name ?? `Chain ${chainId}`
+  return findNetwork(chainId)?.name ?? `Chain ${chainId}`
 }
 
 export function explorerTx(chainId: number, hash: string): string {
-  const base = CHAIN_META[chainId]?.explorer ?? 'https://etherscan.io'
+  const base = findNetwork(chainId)?.explorer ?? 'https://etherscan.io'
   return `${base}/tx/${hash}`
 }
 
 /** Chains offered in the redeem/verify selectors, in display order. */
-export const SELECTABLE_CHAINS: { id: number; label: string; explorer: string }[] = SUPPORTED_CHAINS
-  .filter((c) => CHAIN_META[c.id]?.selectable)
-  .map((c) => ({ id: c.id, label: CHAIN_META[c.id].name, explorer: CHAIN_META[c.id].explorer }))
+export const SELECTABLE_CHAINS: { id: number; label: string; explorer: string }[] = LIVE_NETWORKS.map((n) => ({
+  id: n.chain.id,
+  label: n.name,
+  explorer: n.explorer,
+}))

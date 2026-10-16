@@ -12,7 +12,9 @@
     "test:setup": "node test/setup-local.mjs",
     "test:flow": "node test/test-full-flow.mjs",
     "test:unit": "bun test test/unit",
-    "publisher": "bun server/intuition-publisher.ts"
+    "publisher": "bun server/intuition-publisher.ts",
+    "deploy:network": "bun scripts/deploy-network.ts",
+    "e2e:fork": "bun scripts/e2e-fork.ts"
   },
   "dependencies": {
     "@0xintuition/graphql": "^3.0.1",
