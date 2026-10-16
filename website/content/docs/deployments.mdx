@@ -34,6 +34,35 @@ Because the address depends only on the salt and the bytecode, **the same contra
 has the same address on every chain**. The tables below therefore apply to both
 Ethereum mainnet and Base — a given enforcer is at one address, everywhere.
 
+## Networks
+
+HourGlass can run on any network where MetaMask's Delegation Framework v1.3.0 and
+Safe\{Wallet\} (with its Transaction Service) are both deployed. Those are listed
+below. Each one also needs HourGlass's own module factory, plus the four enforcers
+the payment rails sign against. Until those are deployed, the app does not offer
+the network.
+
+| Network | Chain id | Status |
+|---|---|---|
+| Ethereum | 1 | live — full enforcer suite |
+| Base | 8453 | live — full enforcer suite |
+| Base Sepolia | 84532 | live — testnet, canonical enforcers |
+| Ethereum Sepolia | 11155111 | live — testnet, canonical enforcers |
+| OP Mainnet, Arbitrum, Polygon, BNB Chain, Gnosis, Linea, Unichain, Ink, Sonic, Berachain, Monad | 10, 42161, 137, 56, 100, 59144, 130, 57073, 146, 80094, 143 | rolling out |
+| Gnosis Chiado, Berachain Bepolia, Monad Testnet | 10200, 80069, 10143 | rolling out — testnets |
+
+On every network rolled out by `scripts/deploy-network.ts` (all networks except
+Ethereum, Base and the two Sepolia testnets, which keep their earlier factories), the
+contracts go through the deterministic CREATE2 deployer (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) under the same
+`OURGLASS` salt, with creation code recovered byte for byte from the Ethereum
+deployment transactions. The addresses are therefore identical everywhere. The
+enforcers sit at the addresses in the table below, and the factory is always
+`0x30eA334e6cBE550c4FD90d4558B776078f05c0d8`. Who sends the transaction does not
+change the address.
+
+`bun scripts/deploy-network.ts check` reads every network and compares each
+deployed contract's runtime bytecode with its Ethereum instance.
+
 ## Ethereum mainnet (chain 1) and Base (chain 8453)
 
 Deployer: `0x2FF0363132d0dc5feb090790C46B77EF1ce96aa2`. On Ethereum mainnet, the
