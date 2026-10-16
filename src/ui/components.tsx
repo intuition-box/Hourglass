@@ -2,15 +2,13 @@
 import { useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { IconBolt, IconCheck, IconCopy } from './icons'
 
-export type Status = 'active' | 'pending' | 'revoked' | 'executed'
+export type Status = 'active' | 'pending' | 'revoked'
 
 // eslint-disable-next-line react-refresh/only-export-components -- shared design tokens, not a route module
 export const STATUS: Record<Status, { label: string; color: string; dot: string; soft: string; line: string }> = {
   active: { label: 'Active', color: '#34D399', dot: '#34D399', soft: 'rgba(52,211,153,.12)', line: 'rgba(52,211,153,.30)' },
   pending: { label: 'Pending', color: '#FBBF24', dot: '#FBBF24', soft: 'rgba(251,191,36,.12)', line: 'rgba(251,191,36,.30)' },
   revoked: { label: 'Revoked', color: '#FB7185', dot: '#FB7185', soft: 'rgba(251,113,133,.12)', line: 'rgba(251,113,133,.28)' },
-  // A one-shot limit order that has fired (limitedCalls exhausted). Neutral slate — done, not an error.
-  executed: { label: 'Executed', color: '#94A3B8', dot: '#94A3B8', soft: 'rgba(148,163,184,.12)', line: 'rgba(148,163,184,.28)' },
 }
 
 /** The Hourglass mark — the die reduced: a cube seen down its (1,1,1) diagonal is a

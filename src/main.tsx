@@ -11,19 +11,15 @@ import './index.css'
 
 const queryClient = new QueryClient()
 
-// Workshop slide deck, lazy-loaded so it stays out of the app bundle.
-const Pitch = React.lazy(() => import('./pages/Pitch'))
-
 // The Safe App is served under /safe-app on the shared domain; utility pages keep
 // their own routes beneath it. The redeem console now lives on the website at
 // /redeem. Everything else is the in-Safe app shell.
-const isPitch = window.location.pathname === '/safe-app/pitch'
 const isVerify = window.location.pathname === '/safe-app/verify'
 // The Safe App only works inside the Safe iframe. A top-level visitor who reaches
 // the app shell (not a utility route, not framed by Safe) belongs on the website
 // landing, which now lives at the domain root.
 const inSafeIframe = window.self !== window.top
-const isUtilityRoute = isPitch || isVerify
+const isUtilityRoute = isVerify
 // Only PROD has a separate site serving '/' to redirect to. In dev there is no
 // such site, so redirecting to '/' just reloads this same script and loops —
 // show instructions instead of flickering forever.
@@ -56,11 +52,7 @@ if (shouldRedirectToWebsite) {
 } else {
   ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {isPitch ? (
-      <React.Suspense fallback={<div className="min-h-screen bg-base" />}>
-        <Pitch />
-      </React.Suspense>
-    ) : isVerify ? (
+    {isVerify ? (
       <Verify />
     ) : (
       <WagmiProvider config={wagmiConfig}>

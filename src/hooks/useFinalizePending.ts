@@ -55,15 +55,13 @@ function localRecordFor(messageHash: Hex): { organization?: OrganizationInput; d
 }
 
 /**
- * The finalize pass itself, callable outside the mount effect. Extracted so the Limit
- * order tab can run it on demand: the agent discovers its mandate on Intuition, so
- * starting one before this has run would fail on a mandate that is merely unindexed.
+ * The finalize pass itself, run from the mount effect below.
  *
  * Returns the atom id published per delegationHash. The pin is deterministic (ADR 0005),
  * so a caller that knows its own hash learns exactly which atom to expect — and an empty
  * result for a hash it just signed means the poke did not take.
  */
-export async function finalizePending(
+async function finalizePending(
   chainId: number,
   safeAddress: Address,
   isCancelled: () => boolean = () => false,
