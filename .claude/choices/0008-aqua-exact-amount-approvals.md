@@ -1,6 +1,6 @@
 # 0008 — Aqua ships with exact-amount approvals, and a salt on every strategy
 
-**Status:** Accepted
+**Status:** Superseded by 0009
 **Date:** 2026-07-25
 **Triggered by:** user request (Aqua LP page)
 

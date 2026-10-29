@@ -1,0 +1,102 @@
+{
+  "1/subscription": {
+    "delegationHash": "0xf69c2f2bce713a997710bf0fad532cf60280cf146444b60bdfadf356bb5b14fa",
+    "typedDataHash": "0x2f09d0b73c00d0726ab171fc253990f583bc62477695121b80e826f896523882",
+    "enforcers": [
+      "0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076",
+      "0x11262E3116a50654547AB0A417BE77eB14b9F339"
+    ]
+  },
+  "1/subscriptionEndDate": {
+    "delegationHash": "0xec55906b661999de30295ac271755be5f308d5c953dc4ca857842d836cf8727e",
+    "typedDataHash": "0xe819ab0ae4b486d2522af7aafe3c82a121be7830c96e8fd2a11fd7a9aa8d01f1",
+    "enforcers": [
+      "0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076",
+      "0x11262E3116a50654547AB0A417BE77eB14b9F339",
+      "0xF1635460548F44543366ec4453D512a7Ce85Af85"
+    ]
+  },
+  "1/stream": {
+    "delegationHash": "0x74e4229e8198fdcc01830896dc36fe9cc35ab0eb222d1c82aed6448feb3938e7",
+    "typedDataHash": "0xd564288eee903a4a0a175a14a748c434f64ea724df98eb6acee81cec5f21c460",
+    "enforcers": [
+      "0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076",
+      "0xE475D14d61756D6e940B74C20d2E44EB70c71a8D"
+    ]
+  },
+  "8453/subscription": {
+    "delegationHash": "0xf69c2f2bce713a997710bf0fad532cf60280cf146444b60bdfadf356bb5b14fa",
+    "typedDataHash": "0xce478ecb02756018fb7966c36f2ab611c78b1b11807fe9469143ff5c795946fa",
+    "enforcers": [
+      "0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076",
+      "0x11262E3116a50654547AB0A417BE77eB14b9F339"
+    ]
+  },
+  "8453/subscriptionEndDate": {
+    "delegationHash": "0xec55906b661999de30295ac271755be5f308d5c953dc4ca857842d836cf8727e",
+    "typedDataHash": "0x755a378caee81be1690c2f23eea9655187b05e7053ba946248316db97edfe5d4",
+    "enforcers": [
+      "0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076",
+      "0x11262E3116a50654547AB0A417BE77eB14b9F339",
+      "0xF1635460548F44543366ec4453D512a7Ce85Af85"
+    ]
+  },
+  "8453/stream": {
+    "delegationHash": "0x74e4229e8198fdcc01830896dc36fe9cc35ab0eb222d1c82aed6448feb3938e7",
+    "typedDataHash": "0x0dc0fe23fffc095b645e4201a9024f295f18b8038f59b22280373b6fd453c0bd",
+    "enforcers": [
+      "0x9Fed2C8Bf48Af2c8C0D7E9aE089523Da78D0A076",
+      "0xE475D14d61756D6e940B74C20d2E44EB70c71a8D"
+    ]
+  },
+  "84532/subscription": {
+    "delegationHash": "0x19a49e4c6ea62fb3e43e3b0fcdcaebaa5ab5266dcee8b0c99cd24b039fc60b27",
+    "typedDataHash": "0xf7e1cc7e72b91805fc49087ddf63f7c0a2386089e6a939a10ff0c111ff245520",
+    "enforcers": [
+      "0x92Bf12322527cAA612fd31a0e810472BBB106A8F",
+      "0x474e3Ae7E169e940607cC624Da8A15Eb120139aB"
+    ]
+  },
+  "84532/subscriptionEndDate": {
+    "delegationHash": "0xd507834c4ad5496849b29cb95cae2f7845bd6885108fa541691b3a45b645eac8",
+    "typedDataHash": "0x82b41ffed60f9bc0d61ae655add845543867ce4082e4757d3c36bc513ad70a32",
+    "enforcers": [
+      "0x92Bf12322527cAA612fd31a0e810472BBB106A8F",
+      "0x474e3Ae7E169e940607cC624Da8A15Eb120139aB",
+      "0x1046bb45C8d673d4ea75321280DB34899413c069"
+    ]
+  },
+  "84532/stream": {
+    "delegationHash": "0x5e45cd3954413a46af9084d80520d4aaa70d81bb810d8c15fd55d58d9d7f51ae",
+    "typedDataHash": "0xd0a49ba87a9a1d65458a647f0e77a9c88a113685ebba6d2fd9d9e8fa82ba9080",
+    "enforcers": [
+      "0x92Bf12322527cAA612fd31a0e810472BBB106A8F",
+      "0x56c97aE02f233B29fa03502Ecc0457266d9be00e"
+    ]
+  },
+  "11155111/subscription": {
+    "delegationHash": "0x19a49e4c6ea62fb3e43e3b0fcdcaebaa5ab5266dcee8b0c99cd24b039fc60b27",
+    "typedDataHash": "0x98cfa6d39d05364b158671f84a6320c30ce793ef4aa7865d6758578f1aec88ff",
+    "enforcers": [
+      "0x92Bf12322527cAA612fd31a0e810472BBB106A8F",
+      "0x474e3Ae7E169e940607cC624Da8A15Eb120139aB"
+    ]
+  },
+  "11155111/subscriptionEndDate": {
+    "delegationHash": "0xd507834c4ad5496849b29cb95cae2f7845bd6885108fa541691b3a45b645eac8",
+    "typedDataHash": "0x9ec60fc3d01393c1ce63f905a59953303471bbdbb3ec5a134788394c5a6e3b2e",
+    "enforcers": [
+      "0x92Bf12322527cAA612fd31a0e810472BBB106A8F",
+      "0x474e3Ae7E169e940607cC624Da8A15Eb120139aB",
+      "0x1046bb45C8d673d4ea75321280DB34899413c069"
+    ]
+  },
+  "11155111/stream": {
+    "delegationHash": "0x5e45cd3954413a46af9084d80520d4aaa70d81bb810d8c15fd55d58d9d7f51ae",
+    "typedDataHash": "0xb9132b0858867532f2ab717fbe8e1769f587d000fbdee1fabf6f70fe000f365e",
+    "enforcers": [
+      "0x92Bf12322527cAA612fd31a0e810472BBB106A8F",
+      "0x56c97aE02f233B29fa03502Ecc0457266d9be00e"
+    ]
+  }
+}

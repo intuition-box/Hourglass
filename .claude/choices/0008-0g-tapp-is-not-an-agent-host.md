@@ -1,6 +1,6 @@
 # 0008 — 0G Tapp is not an agent-hosting product; correcting the 0G integration surface
 
-**Status:** Accepted
+**Status:** Superseded by 0009
 **Date:** 2026-07-26
 **Triggered by:** user request — "arrête d'inventer", then a review of the 0G decisions
 

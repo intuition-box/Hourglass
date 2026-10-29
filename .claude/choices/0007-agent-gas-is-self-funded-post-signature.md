@@ -1,6 +1,6 @@
 # 0007 — Agent gas is self-funded, topped up from the Safe after mandate signature
 
-**Status:** Accepted
+**Status:** Superseded by 0009
 **Date:** 2026-07-25
 **Triggered by:** user request (agent execution layer — stack selection)
 

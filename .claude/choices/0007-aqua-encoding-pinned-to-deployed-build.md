@@ -1,6 +1,6 @@
 # 0007 — Aqua strategy encoding is pinned to the deployed build, not the repo
 
-**Status:** Accepted
+**Status:** Superseded by 0009
 **Date:** 2026-07-25
 **Triggered by:** user request (Aqua LP page)
 
